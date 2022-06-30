@@ -1,7 +1,7 @@
 
 import fs from 'fs';
 import axios, { AxiosResponse } from 'axios';
-import { Product, Price } from '../db/types';
+import type { Product, Price } from '../db/types';
 import { generateProductHash, generatePriceHash } from '../db/helpers';
 import { upsertProducts } from '../db/upsert';
 import config from '../config';

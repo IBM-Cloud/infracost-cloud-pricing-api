@@ -5,7 +5,7 @@ import { IamAuthenticator } from '@ibm-cloud/platform-services/auth';
 import { writeFile } from 'fs/promises';
 import _ from 'lodash';
 
-import { Product, Price } from '../db/types';
+import type { Product, Price } from '../db/types';
 import { generateProductHash } from '../db/helpers';
 import { upsertProducts } from '../db/upsert';
 import config from '../config';

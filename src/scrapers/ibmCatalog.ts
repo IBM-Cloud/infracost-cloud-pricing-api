@@ -475,7 +475,9 @@ async function scrape(): Promise<void> {
                   // eslint-disable-next-line no-param-reassign
                   deployment.pricingChildren = [pricingObject];
                 } catch (e) {
-                  config.logger.info(e?.message);
+                  if(e instanceof Error) {
+                    config.logger.info(e.message);
+                  }
                 }
               })
             );

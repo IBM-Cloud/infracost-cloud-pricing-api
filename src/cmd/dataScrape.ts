@@ -71,7 +71,11 @@ async function run(): Promise<void> {
     try {
       await scraperConfig.scraperFunc();
     } catch (err) {
-      config.logger.error(err);
+      if(err instanceof Error) {
+        config.logger.error(err);
+      } else {
+        config.logger.error('Unable to scrape!');
+      }
       success = false;
     }
   }

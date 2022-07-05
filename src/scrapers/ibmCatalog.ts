@@ -476,7 +476,9 @@ async function scrape(): Promise<void> {
                   deployment.pricingChildren = [pricingObject];
                 } catch (e) {
                   if(e instanceof Error) {
-                    config.logger.info(e.message);
+                    config.logger.error(e.message);
+                  } else {
+                    config.logger.error(e);
                   }
                 }
               })

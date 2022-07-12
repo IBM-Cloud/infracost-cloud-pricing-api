@@ -238,50 +238,46 @@ function getPrices(
   country: string,
   currency: string
 ): Price[] {
-  let prices: Price[] = [];
+  const prices: Price[] = [];
 
   if (pricing) {
     const { metrics, amounts } = pricing;
-
-    if (!metrics || !amounts) {
+    const geoKey = `${country}-${currency}`;
+    if (!metrics || !amounts || !amounts[geoKey]) {
       return prices;
     }
-    const geoKey = `${country}-${currency}`;
-    prices = Object.entries(amounts[geoKey])
-      .map(([partNumber, costs]): Price[] => {
-        const {
+    for (const [partNumber, costs] of Object.entries(amounts[geoKey])) {
+      const {
+        tierModel,
+        chargeUnitName,
+        chargeUnit,
+        chargeUnitQty,
+        effectiveFrom,
+        effectiveUntil,
+      } = metrics[partNumber];
+
+      for (const [i, cost] of Object.entries(costs)) {
+        const prevCost = costs[Number(i) - 1];
+        const { price, quantity_tier: quantityTier } = cost;
+        prices.push({
+          priceHash: `${chargeUnitName}-${chargeUnitQty}-${country}-${currency}-${quantityTier}-${partNumber}`,
+          purchaseOption: String(chargeUnitQty),
+          USD: String(price),
+          startUsageAmount: prevCost?.quantity_tier
+            ? String(prevCost?.quantity_tier)
+            : '0',
+          endUsageAmount: String(quantityTier),
           tierModel,
-          chargeUnitName,
-          chargeUnit,
-          chargeUnitQty,
-          // usageCapQty,
-          // displayCap,
-          effectiveFrom,
-          effectiveUntil,
-        } = metrics[partNumber];
-
-        return costs.map((cost: GCPrice): Price => {
-          const { price, quantity_tier: quantityTier } = cost;
-
-          return {
-            priceHash: `${chargeUnitName}-${chargeUnitQty}-${country}-${currency}-${quantityTier}-${partNumber}`,
-            purchaseOption: String(chargeUnitQty),
-            USD: String(price),
-            endUsageAmount: String(quantityTier),
-            tierModel,
-            // usageCapQty,
-            // displayCap,
-            description: chargeUnit,
-            unit: chargeUnitName ?? '',
-            effectiveDateStart: effectiveFrom ?? new Date().toISOString(),
-            effectiveDateEnd: effectiveUntil,
-            country,
-            currency,
-            partNumber,
-          };
+          description: chargeUnit,
+          unit: chargeUnitName ?? '',
+          effectiveDateStart: effectiveFrom ?? new Date().toISOString(),
+          effectiveDateEnd: effectiveUntil,
+          country,
+          currency,
+          partNumber,
         });
-      })
-      .flat();
+      }
+    }
   }
   return prices;
 }

@@ -262,7 +262,7 @@ function getPrices(
         prices.push({
           priceHash: `${chargeUnitName}-${chargeUnitQty}-${country}-${currency}-${quantityTier}-${partNumber}`,
           purchaseOption: String(chargeUnitQty),
-          USD: String(price),
+          USD: String(price / parseInt(chargeUnitQty ?? "1", 10)),
           startUsageAmount: prevCost?.quantity_tier
             ? String(prevCost?.quantity_tier)
             : '0',

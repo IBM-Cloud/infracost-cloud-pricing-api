@@ -262,7 +262,7 @@ function getPrices(
         prices.push({
           priceHash: `${chargeUnitName}-${chargeUnitQty}-${country}-${currency}-${quantityTier}-${partNumber}`,
           purchaseOption: String(chargeUnitQty),
-          USD: String(price / parseInt(chargeUnitQty ?? "1", 10)),
+          USD: String(price / parseInt(chargeUnitQty ?? '1', 10)),
           startUsageAmount: prevCost?.quantity_tier
             ? String(prevCost?.quantity_tier)
             : '0',
@@ -492,6 +492,12 @@ const infrastuctureParams = {
   account: 'global',
 };
 
+const platformServiceParams = {
+  q: 'kind:platform_service active:true',
+  include: 'id:geo_tags:kind:name:pricing_tags:tags',
+  account: 'global',
+};
+
 async function getCatalogEntries(
   axiosClient: AxiosInstance,
   params: Pick<
@@ -590,6 +596,7 @@ async function scrape(): Promise<void> {
   config.logger.info(`Started IBM Cloud scraping at ${new Date()}`);
   const saasResults: CatalogEntry[] = [];
   const iaasResults: CatalogEntry[] = [];
+  const psResults: CatalogEntry[] = [];
 
   const apikey = config.ibmCloudApiKey;
 
@@ -623,9 +630,7 @@ async function scrape(): Promise<void> {
     }
   }
 
-  await writeFile(saasDataFileName, JSON.stringify(saasResults, null, 2));
   const saasProducts = parseProducts(saasResults);
-  await writeFile(saasProductFileName, JSON.stringify(saasProducts, null, 2));
 
   config.logger.info('Fetching Infrastructure products...');
 
@@ -641,12 +646,27 @@ async function scrape(): Promise<void> {
     }
   }
 
-  await writeFile(iaasDataFileName, JSON.stringify(iaasResults, null, 2));
   const iaasProducts = parseProducts(iaasResults);
-  await writeFile(iaasProductFileName, JSON.stringify(iaasProducts, null, 2));
+
+  config.logger.info('Fetching Platform Service products...');
+
+  const platformServiceEntries = await getCatalogEntries(axiosClient, {
+    ...platformServiceParams,
+  });
+
+  for (const ps of platformServiceEntries) {
+    if (ps.kind === 'platform_service' && !skipList.includes(ps.name)) {
+      config.logger.info(`Scraping pricing for ${ps.name}`);
+      const tree = await fetchPricingForProduct(axiosClient, ps);
+      psResults.push(tree);
+    }
+  }
+
+  const psProducts = parseProducts(psResults, 'service');
 
   await upsertProducts(saasProducts);
   await upsertProducts(iaasProducts);
+  await upsertProducts(psProducts);
 
   config.logger.info(`Ended IBM Cloud scraping at ${new Date()}`);
 }

@@ -7,8 +7,9 @@ import config from '../config';
 import { PricingModels } from './ibmCatalog';
 
 // pricing api for IBM Kubernetes infrastructure
-const baseUrl = 'https://cloud.ibm.com/kubernetes/api';
-const filename = `data/ibm-instances.json`;
+const baseUrl = 'https://cloud.ibm.com/containers/cluster-management/api';
+const dataFolder = `data/`
+const filePrefix = `ibmkube`;
 const RETRY_DELAY_MS = 30000;
 const MAX_RETRIES = 3;
 const vendorName = 'ibm';
@@ -31,7 +32,7 @@ type ibmProductJson = {
   provider?: string;
   isolation?: string;
   contract_duration?: string;
-  ocp_included?: string;
+  ocp_included: string;
   flavor_class?: string;
   catalog_region?: string;
   server_type?: string;
@@ -57,14 +58,18 @@ export type ibmKubernetesAttributes = {
   currency: string;
   provider?: string;
   flavor?: string;
+  flavorClass?: string;
   isolation?: string;
   operatingSystem?: string;
-  ocpIncluded?: string;
+  ocpIncluded: string;
   catalogRegion?: string;
   serverType?: string;
   billingType?: string;
   country?: string;
 };
+
+const regions = ['jp-tok','au-syd', 'br-sao', 'ca-tor', 'eu-de', 'eu-es', 'eu-fr2', 'jp-osa', 'eu-gb', 'us-east', 'us-south'];
+const platforms = ['kube', 'openshift'];
 
 async function scrape(): Promise<void> {
   await downloadAll();
@@ -77,8 +82,20 @@ function sleep(ms: number) {
   });
 }
 
-async function downloadAll(): Promise<void> {
-  config.logger.info(`Downloading IBM instances`);
+async function downloadAll(): Promise<void[]> {
+  let downloadPromises: Promise<void>[] = []
+  platforms.forEach(platform => {
+    regions.forEach(region => {
+      downloadPromises.push(download(platform, 'vpc-gen2', region))
+    });  
+  })
+  return Promise.all(downloadPromises)
+}
+
+// possible providers are ['vpc-gen2', 'classic']
+// possible platforms are 'kube', 'addons', and 'dhost'
+async function download(platform: string, provider: string, region:string): Promise<void> {
+  config.logger.info(`Downloading pricing ${provider}, ${region}`);
 
   let resp: AxiosResponse | null = null;
   let success = false;
@@ -90,9 +107,12 @@ async function downloadAll(): Promise<void> {
 
       resp = await axios({
         method: 'get',
-        url: `${baseUrl}/prices/?platform=all&country=USA`,
+        url: `${baseUrl}/prices/?platform=${platform}&country=USA&region=${region}&provider=${provider}`,
         headers: {
-          referer: 'https://cloud.ibm.com',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US;q=0.9',
+          'Referer': 'https://cloud.ibm.com/containers/cluster-management/catalog/create',
+          'User-Agent': 'Mozilla/5.0'
         },
       });
       success = true;
@@ -108,6 +128,7 @@ async function downloadAll(): Promise<void> {
   } while (!success && attempts < MAX_RETRIES);
 
   try {
+    const filename=`${dataFolder}${filePrefix}-${provider}-${platform}-${region}.json`
     const writer = fs.createWriteStream(filename);
     await new Promise((resolve, reject) => {
       if (!resp) {
@@ -217,6 +238,7 @@ function parseAttributes(productJson: ibmProductJson): ibmKubernetesAttributes {
     currency: productJson.currency,
     provider: productJson.provider,
     flavor: productJson.flavor,
+    flavorClass: productJson.flavor_class,
     isolation: productJson.isolation,
     operatingSystem: productJson.operating_system,
     ocpIncluded: productJson.ocp_included,
@@ -255,6 +277,7 @@ function parseIbmProduct(productJson: ibmProductJson): Product {
   };
   product.productHash = generateProductHash(product);
   product.attributes = parseAttributes(productJson);
+  product.attributes.ocpIncluded = productJson?.ocp_included ? 'true' : 'false'
   product.prices = parsePrices(product, productJson);
 
   return product;
@@ -266,8 +289,10 @@ function isDeprecated(productJson: ibmProductJson): boolean {
   return !!productJson?.deprecated;
 }
 
-async function loadAll(): Promise<void> {
+async function load(filename: string): Promise<void> {
   try {
+    console.log(`loading ${filename}`);
+
     const body = fs.readFileSync(filename);
     const sample = body.toString();
     const json = <productGroupJson>JSON.parse(sample);
@@ -282,13 +307,27 @@ async function loadAll(): Promise<void> {
         }
       });
     });
-    await upsertProducts(products);
+    return upsertProducts(products);
   } catch (e: any) {
     config.logger.error(`Skipping file ${filename} due to error ${e}`);
     config.logger.error(e.stack);
+    throw e
   }
+}
+
+async function loadAll(): Promise<void[]> {
+  const dataFolder = './data';
+  let loadPromises: Promise<void>[] = []
+
+  fs.readdirSync(dataFolder).forEach(filename => {
+    if (filename.match(/ibmkube/)) {
+      loadPromises.push(load(`${dataFolder}/${filename}`))
+    }
+  });
+  return Promise.all(loadPromises)
 }
 
 export default {
   scrape,
 };
+

@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
-import * as loggerUtils from '@console/console-platform-log4js-utils';
-import NodeCache from 'node-cache';
+import * as log4js from 'log4js';import NodeCache from 'node-cache';
 import { Pool, PoolConfig } from 'pg';
 import tmp from 'tmp';
 import fs from 'fs';
@@ -132,7 +131,7 @@ function generateGcpKeyFile(): string {
   return tmpFile.name;
 }
 
-const logger = loggerUtils.getLogger('cloud-pricing-api');
+const logger = log4js.getLogger('cloud-pricing-api');
 
 const cache = new NodeCache();
 

@@ -132,8 +132,8 @@ async function downloadService(service: ServiceJson): Promise<void> {
     filename = `data/${filename}.json`;
     const writer = fs.createWriteStream(filename);
     resp.data.pipe(writer);
-    await new Promise((resolve) => {
-      writer.on('finish', resolve);
+    await new Promise<void>((resolve) => {
+      writer.on('finish', () => resolve());
     });
 
     const body = fs.readFileSync(filename);

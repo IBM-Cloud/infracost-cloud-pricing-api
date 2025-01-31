@@ -1,13 +1,15 @@
 {
   "compilerOptions": {
+    "target": "ES6", // Add this line
+    "module": "commonjs", // Add this line
     "sourceMap": true,
     "outDir": "dist",
     "strict": true,
-    "lib": ["esnext","dom"],
+    "lib": ["esnext", "dom"],
     "esModuleInterop": true,
-    "declaration": true,
+    "declaration": true
   },
   "include": [
     "src/**/*"
-  ],
+  ]
 }

@@ -136,6 +136,17 @@ const logger = loggerUtils.getLogger('cloud-pricing-api');
 
 const cache = new NodeCache();
 
+// Represents the most recent version tag in the dataops/cloud-pricing-api repo
+// Reference: https://github.ibm.com/dataops/cloud-pricing-api/tags
+let tag_version
+
+if (process.env.IMAGE_VERSION) {
+  let index = process.env.IMAGE_VERSION.indexOf(":")
+  index !== -1 ? tag_version = process.env.IMAGE_VERSION.substring(index+1) : tag_version = process.env.IMAGE_VERSION
+} else {
+  tag_version = "local"
+}
+
 const config = {
   logger,
   pg,
@@ -161,7 +172,7 @@ const config = {
   ibmCloudApiKey: process.env.IBM_CLOUD_API_KEY,
   region: process.env.CLOUD_REGION || 'local',
   hostname: process.env.HOSTNAME || 'local',
-  version: process.env.IMAGE_VERSION || 'local'
+  version: tag_version
 };
 
 export default config;

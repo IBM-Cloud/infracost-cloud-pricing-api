@@ -175,7 +175,7 @@ function parsePricingJson(
           tierModel,
           chargeUnitName,
           chargeUnit,
-          chargeUnitQty,
+          chargeUnitQty: String(chargeUnitQty),
           usageCapQty,
           displayCap,
           effectiveFrom,
@@ -596,7 +596,7 @@ async function fetchPricingForProduct(
               }
               // eslint-disable-next-line no-param-reassign
               element.pricingChildren = [pricingObject];
-            } catch (e: any) {
+            } catch (e: unknown) {
               if (axios.isAxiosError(e)) {
                 if (!e?.response?.status || e?.response?.status !== 404) {
                   config.logger.error(e.message);
@@ -628,7 +628,7 @@ async function scrape(): Promise<void> {
   const compositeResults: CatalogEntry[] = [];
 
   const apikey = config.ibmCloudApiKey;
-  var dataString;
+  let dataString;
 
   if (typeof apikey !== 'string' || apikey.trim().length === 0) {
     throw new Error('No IBM_CLOUD_API_KEY provided!');

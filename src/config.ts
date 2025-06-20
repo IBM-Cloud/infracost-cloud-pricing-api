@@ -159,7 +159,8 @@ const config = {
   gcpProject: process.env.GCP_PROJECT,
   ibmCloudApiKey: process.env.IBM_CLOUD_API_KEY,
   region: process.env.CLOUD_REGION || 'local',
-  hostname: process.env.HOSTNAME || 'local'
+  hostname: process.env.HOSTNAME || 'local',
+  version: process.env.IMAGE_VERSION || 'local'
 };
 
 export default config;

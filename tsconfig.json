@@ -5,11 +5,13 @@
     "sourceMap": true,
     "outDir": "dist",
     "strict": true,
-    "lib": ["esnext", "dom"],
+    "moduleResolution": "node",
+    "module": "CommonJS",
+    "lib": ["esnext","dom"],
     "esModuleInterop": true,
     "declaration": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true
+    "target": "ESNext",
+    "typeRoots": [ "../../typings", "./node_modules/@types"]
   },
   "include": [
     "src/**/*"

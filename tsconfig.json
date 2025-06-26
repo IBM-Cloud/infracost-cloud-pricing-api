@@ -1,5 +1,7 @@
 {
   "compilerOptions": {
+    "target": "ES2015",
+    "module": "commonjs",
     "sourceMap": true,
     "outDir": "dist",
     "strict": true,
@@ -13,5 +15,5 @@
   },
   "include": [
     "src/**/*"
-  ],
+  ]
 }

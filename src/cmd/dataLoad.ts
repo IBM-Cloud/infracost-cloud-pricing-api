@@ -16,6 +16,7 @@ import {
   renameProductsTable,
 } from '../db/setup';
 import { setPriceUpdateFailed, setPriceUpdateSuccessful } from '../stats/stats';
+import { retryDatabaseOperation } from '../db/retry';
 
 async function run(): Promise<void> {
   const pool = await config.pg();
@@ -30,9 +31,11 @@ async function run(): Promise<void> {
 
   const client = await pool.connect();
   try {
-    await client.query('BEGIN');
+    await retryDatabaseOperation(async () => client.query('BEGIN'));
 
-    await client.query(format(`DROP TABLE IF EXISTS %I`, 'ProductLoad'));
+    await retryDatabaseOperation(async () =>
+      client.query(format(`DROP TABLE IF EXISTS %I`, 'ProductLoad'))
+    );
 
     await createProductsTable(client, 'ProductLoad');
 
@@ -44,9 +47,9 @@ async function run(): Promise<void> {
 
     await setPriceUpdateSuccessful(client);
 
-    await client.query('COMMIT');
+    await retryDatabaseOperation(async () => client.query('COMMIT'));
   } catch (e) {
-    await client.query('ROLLBACK');
+    await retryDatabaseOperation(async () => client.query('ROLLBACK'));
 
     await setPriceUpdateFailed(client);
 
@@ -57,8 +60,8 @@ async function run(): Promise<void> {
 }
 
 async function replaceProductTable(client: PoolClient) {
-  await client.query(
-    format(`DROP TABLE IF EXISTS %I`, config.productTableName)
+  await retryDatabaseOperation(async () =>
+    client.query(format(`DROP TABLE IF EXISTS %I`, config.productTableName))
   );
 
   await renameProductsTable(client, 'ProductLoad', config.productTableName);

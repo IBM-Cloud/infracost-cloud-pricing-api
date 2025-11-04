@@ -2,6 +2,7 @@
 import format from 'pg-format';
 import { Price, Product, ProductAttributes } from './types';
 import config from '../config';
+import { retryDatabaseOperation } from './retry';
 
 type AttributeFilter = {
   key: string;
@@ -53,14 +54,12 @@ export async function findProducts(
       sql = format(`${sql} LIMIT %L`, limit);
     }
   
-    const response = await pool.query(sql).catch(e => {
-      config.logger.error(`Error waiting for response to query for product ${e}`) 
-    });
+    const response = await retryDatabaseOperation(async () => pool.query(sql));
     const products = response?.rows as ProductWithPriceMap[];
-    return products.map((product) => flattenPrices(product));  
+    return products.map((product) => flattenPrices(product));
   } catch (err) {
-    config.logger.error(`Error trying to query for product ${err}`) 
-    return []
+    config.logger.error(`Error trying to query for product ${err}`);
+    return [];
   }
 }
 

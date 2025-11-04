@@ -1,6 +1,7 @@
 import format from 'pg-format';
 import { Product, Price } from './types';
 import config from '../config';
+import { retryDatabaseOperation } from './retry';
 
 const batchSize = 1000;
 
@@ -36,10 +37,12 @@ async function upsertProducts(products: Product[]): Promise<void> {
       productHashToInsertRow.size > batchSize ||
       productHashToInsertRow.has(product.productHash)
     ) {
-      await pool.query(
-        insertSql +
-          Array.from(productHashToInsertRow.values()).join(',') +
-          onConflictSql
+      await retryDatabaseOperation(async () =>
+        pool.query(
+          insertSql +
+            Array.from(productHashToInsertRow.values()).join(',') +
+            onConflictSql
+        )
       );
       productHashToInsertRow.clear();
     }
@@ -71,10 +74,12 @@ async function upsertProducts(products: Product[]): Promise<void> {
   }
 
   if (productHashToInsertRow.size > 0) {
-    await pool.query(
-      insertSql +
-        Array.from(productHashToInsertRow.values()).join(',') +
-        onConflictSql
+    await retryDatabaseOperation(async () =>
+      pool.query(
+        insertSql +
+          Array.from(productHashToInsertRow.values()).join(',') +
+          onConflictSql
+      )
     );
   }
 }
@@ -82,12 +87,14 @@ async function upsertProducts(products: Product[]): Promise<void> {
 async function upsertPrice(product: Product, price: Price): Promise<void> {
   const pool = await config.pg();
 
-  await pool.query(
-    format(
-      `UPDATE %I SET "prices" = "prices" || %L WHERE "productHash" = %L`,
-      config.productTableName,
-      { [price.priceHash]: [price] },
-      product.productHash
+  await retryDatabaseOperation(async () =>
+    pool.query(
+      format(
+        `UPDATE %I SET "prices" = "prices" || %L WHERE "productHash" = %L`,
+        config.productTableName,
+        { [price.priceHash]: [price] },
+        product.productHash
+      )
     )
   );
 }

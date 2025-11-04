@@ -28,6 +28,19 @@ Infracost runs a hosted version of this API that you can use if you prefer that:
     
     The [GraphQL Playground](https://pricing.api.infracost.io/graphql) can also be used with something like the [modheader](https://bewisse.com/modheader/) browser extension so you can set the custom HTTP header `X-Api-Key` to your Infracost API key.
 
+## Features
+
+### Robust Database Operations
+
+The Cloud Pricing API includes comprehensive retry logic for all PostgreSQL database operations:
+
+- **Automatic Retry**: All database operations automatically retry on transient errors (connection failures, timeouts, etc.)
+- **Exponential Backoff**: Retry delays follow the pattern: 1s, 2s, 4s, 8s, 16s, 20s
+- **Maximum Retries**: Up to 10 retry attempts over a 2-minute window
+- **Comprehensive Logging**: Each retry attempt is logged with detailed error information
+
+For more details, see [Database Retry Logic Documentation](docs/DATABASE_RETRY_LOGIC.md).
+
 ## Architecture
 
 The following diagram shows an overview of the architecture.

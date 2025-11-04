@@ -2,6 +2,7 @@ import { Pool, PoolClient } from 'pg';
 import format from 'pg-format';
 import config from '../config';
 import { camelKeys } from '../db/helpers';
+import { retryDatabaseOperation } from '../db/retry';
 
 type Stats = {
   createdAt: Date;
@@ -21,13 +22,17 @@ export async function setPriceUpdateSuccessful(
     client = await config.pg();
   }
 
-  await client.query(
-    format(
-      `UPDATE %I SET
+  const dbClient = client;
+
+  await retryDatabaseOperation(async () =>
+    dbClient.query(
+      format(
+        `UPDATE %I SET
       updated_at = NOW(),
       prices_last_successfully_updated_at = NOW(),
       prices_last_update_successful = true`,
-      config.statsTableName
+        config.statsTableName
+      )
     )
   );
 }
@@ -40,12 +45,16 @@ export async function setPriceUpdateFailed(
     client = await config.pg();
   }
 
-  await client.query(
-    format(
-      `UPDATE %I SET
+  const dbClient = client;
+
+  await retryDatabaseOperation(async () =>
+    dbClient.query(
+      format(
+        `UPDATE %I SET
       updated_at = NOW(),
       prices_last_update_successful = false`,
-      config.statsTableName
+        config.statsTableName
+      )
     )
   );
 }
@@ -65,7 +74,7 @@ export async function incrementCounters(
       installId
     );
 
-    await pool.query(sql);
+    await retryDatabaseOperation(async () => pool.query(sql));
   }
 
   const sql = format(
@@ -76,7 +85,7 @@ export async function incrementCounters(
     config.statsTableName
   );
 
-  await pool.query(sql);
+  await retryDatabaseOperation(async () => pool.query(sql));
 }
 
 export async function fetchStats(): Promise<Stats | null> {
@@ -99,7 +108,7 @@ export async function fetchStats(): Promise<Stats | null> {
     config.statsTableName
   );
 
-  const response = await pool.query(sql);
+  const response = await retryDatabaseOperation(async () => pool.query(sql));
 
   return response.rows.length > 0
     ? (camelKeys(response.rows[0]) as Stats)

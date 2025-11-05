@@ -6,6 +6,7 @@ import {
   createProductsTableIndex,
   createStatsTable,
 } from '../db/setup';
+import { retryDatabaseOperation } from '../db/retry';
 
 const attempts = 10;
 const backOffSecs = 10;
@@ -19,9 +20,10 @@ async function run(): Promise<void> {
     try {
       client = await pool.connect();
       break;
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const error = e as Error;
       config.logger.error(
-        `Waiting for PostgreSQL to become available: ${e.message}`
+        `Waiting for PostgreSQL to become available: ${error.message}`
       );
       await new Promise((resolve) => {
         setTimeout(resolve, backOffSecs * 1000);
@@ -33,18 +35,20 @@ async function run(): Promise<void> {
     throw new Error('Failed to connect to PostgreSQL');
   }
 
+  const connectedClient = client;
+  
   try {
-    await client.query('BEGIN');
-    await createProductsTable(client, config.productTableName, true);
-    await createProductsTableIndex(client, config.productTableName, true);
-    await createStatsTable(client, config.statsTableName, true);
-    await createInstallsTable(client, config.installsTableName, true);
-    await client.query('COMMIT');
+    await retryDatabaseOperation(async () => connectedClient.query('BEGIN'));
+    await createProductsTable(connectedClient, config.productTableName, true);
+    await createProductsTableIndex(connectedClient, config.productTableName, true);
+    await createStatsTable(connectedClient, config.statsTableName, true);
+    await createInstallsTable(connectedClient, config.installsTableName, true);
+    await retryDatabaseOperation(async () => connectedClient.query('COMMIT'));
   } catch (e) {
-    await client.query('ROLLBACK');
+    await retryDatabaseOperation(async () => connectedClient.query('ROLLBACK'));
     throw e;
   } finally {
-    client.release();
+    connectedClient.release();
   }
 }
 

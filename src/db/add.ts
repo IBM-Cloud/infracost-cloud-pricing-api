@@ -1,6 +1,7 @@
 import format from 'pg-format';
 import { Product, Price } from './types';
 import config from '../config';
+import { retryDatabaseOperation } from './retry';
 
 const batchSize = 1000;
 
@@ -39,10 +40,12 @@ async function addProducts(products: Product[]): Promise<void> {
       productHashToInsertRow.size > batchSize ||
       productHashToInsertRow.has(product.productHash)
     ) {
-      await pool.query(
-        insertSql +
-          Array.from(productHashToInsertRow.values()).join(',') +
-          onConflictSql
+      await retryDatabaseOperation(async () =>
+        pool.query(
+          insertSql +
+            Array.from(productHashToInsertRow.values()).join(',') +
+            onConflictSql
+        )
       );
       productHashToInsertRow.clear();
     }
@@ -74,10 +77,12 @@ async function addProducts(products: Product[]): Promise<void> {
   }
 
   if (productHashToInsertRow.size > 0) {
-    await pool.query(
-      insertSql +
-        Array.from(productHashToInsertRow.values()).join(',') +
-        onConflictSql
+    await retryDatabaseOperation(async () =>
+      pool.query(
+        insertSql +
+          Array.from(productHashToInsertRow.values()).join(',') +
+          onConflictSql
+      )
     );
   }
 }

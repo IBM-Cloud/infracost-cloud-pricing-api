@@ -1,6 +1,7 @@
 import { PoolClient } from 'pg';
 import format from 'pg-format';
 import config from '../config';
+import { retryDatabaseOperation } from '../db/retry';
 
 const attempts = 10;
 const backOffSecs = 10;
@@ -14,9 +15,10 @@ async function run(): Promise<void> {
     try {
       client = await pool.connect();
       break;
-    } catch (e: any) {
+    } catch (e: unknown) {
+      const error = e as Error;
       config.logger.error(
-        `Waiting for PostgreSQL to become available: ${e.message}`
+        `Waiting for PostgreSQL to become available: ${error.message}`
       );
       await new Promise((resolve) => {
         setTimeout(resolve, backOffSecs * 1000);
@@ -28,16 +30,20 @@ async function run(): Promise<void> {
     throw new Error('Failed to connect to PostgreSQL');
   }
 
+  const connectedClient = client;
+  
   try {
-    const counts = await client.query(
-      format(
-        `SELECT "vendorName", count(*) as "productCount" FROM %I GROUP BY "vendorName"`,
-        config.productTableName
+    const counts = await retryDatabaseOperation(async () =>
+      connectedClient.query(
+        format(
+          `SELECT "vendorName", count(*) as "productCount" FROM %I GROUP BY "vendorName"`,
+          config.productTableName
+        )
       )
     );
     config.logger.info(`\n${JSON.stringify(counts.rows, null, 2)}`);
   } finally {
-    client.release();
+    connectedClient.release();
   }
 }
 

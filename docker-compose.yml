@@ -9,7 +9,6 @@ services:
     ports: 
         - 4000:4000
     environment:
-      - INFRACOST_API_KEY=${INFRACOST_API_KEY}
       - SELF_HOSTED_INFRACOST_API_KEY=${SELF_HOSTED_INFRACOST_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=cloud_pricing
@@ -31,7 +30,6 @@ services:
       dockerfile: Dockerfile
     image: infracost/cloud-pricing-api:latest # Latest stable release
     environment:
-      - INFRACOST_API_KEY=${INFRACOST_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=cloud_pricing
       - POSTGRES_USER=postgres
@@ -49,7 +47,6 @@ services:
       dockerfile: Dockerfile
     image: infracost/cloud-pricing-api:latest # Latest stable release
     environment:
-      - INFRACOST_API_KEY=${INFRACOST_API_KEY}
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=cloud_pricing
       - POSTGRES_USER=postgres

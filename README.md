@@ -67,33 +67,23 @@ See [our Helm Chart](https://github.com/infracost/helm-charts/tree/master/charts
     cd cloud-pricing-api
     ```
 
-2. Use the [Infracost CLI](https://github.com/infracost/infracost/blob/master/README.md#quick-start) to get an API key so your self-hosted Cloud Pricing API can download the latest pricing data from us:
-
-    ```sh
-    infracost auth login
-    ```
-    The key is saved in `~/.config/infracost/credentials.yml`.
-
-3. Generate a 32 character API token that your Infracost CLI users will use to authenticate when calling your self-hosted Cloud Pricing API. If you ever need to rotate the API key, you can simply update this environment variable and restart the application.
+2. Generate a 32 character API token that your Infracost CLI users will use to authenticate when calling your self-hosted Cloud Pricing API. If you ever need to rotate the API key, you can simply update this environment variable and restart the application.
 
     ```sh
     export SELF_HOSTED_INFRACOST_API_KEY=$(cat /dev/urandom | env LC_CTYPE=C tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
     echo "SELF_HOSTED_INFRACOST_API_KEY=$SELF_HOSTED_INFRACOST_API_KEY"
     ```
 
-4. Add a `.env` file with the following content:
+3. Add a `.env` file with the following content:
 
     ```sh
-    # The Infracost API from Step 2, used to download pricing data from us.
-    INFRACOST_API_KEY=<API Key from Step 2>
-
-    # The API key you generated in step 3, used to authenticate Infracost CLI users with your self-hosted Cloud Pricing API.
-    SELF_HOSTED_INFRACOST_API_KEY=<API Key from Step 3>
+    # The API key you generated in step 2, used to authenticate Infracost CLI users with your self-hosted Cloud Pricing API.
+    SELF_HOSTED_INFRACOST_API_KEY=<API Key from Step 2>
     ```
 
-5. Run `docker-compose run init_job`. This will start a PostgreSQL DB container and an init container that loads the pricing data. The init container will take a few minutes and exit after the Docker compose logs show `Completed: loading data into DB`.
+4. Run `docker-compose run init_job`. This will start a PostgreSQL DB container and an init container that loads the pricing data. The init container will take a few minutes and exit after the Docker compose logs show `Completed: loading data into DB`.
 
-6. Run `docker-compose up api`. This will start the Cloud Pricing API.
+5. Run `docker-compose up api`. This will start the Cloud Pricing API.
 
 6. Prices can be kept up-to-date by running the update job once a week, for example from cron:
 

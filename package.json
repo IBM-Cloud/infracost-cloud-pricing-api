@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",
-    "postbuild": "copyfiles -u 1 src/views/**/** dist && copyfiles -u 1 src/public/**/** dist",
+    "postbuild": "cpy 'src/views/**' 'src/public/**' dist --parents --cwd=src",
     "start": "node dist/server.js",
     "db:setup": "node dist/cmd/dbSetup.js",
     "data:scrape": "node dist/cmd/dataScrape.js",
@@ -56,14 +56,14 @@
     "@types/yargs": "^17.0.9",
     "async-mutex": "^0.4.0",
     "axios": "^1.12.0",
-    "copyfiles": "^2.4.1",
+    "cpy-cli": "^5.0.0",
     "cors": "^2.8.5",
     "decimal.js": "^10.4.2",
     "dotenv": "^16.0.3",
     "ejs": "^3.1.10",
     "express": "^4.21.2",
-    "glob": "^9.3.5",
-    "googleapis": "^110.0.0",
+    "glob": "^10.5.0",
+    "googleapis": "111.0.0",
     "graphql": "^16.9.0",
     "graphql-tag": "^2.12.6",
     "graphql-upload": "^16.0.2",
@@ -81,7 +81,8 @@
   },
   "overrides": {
     "minimatch": "^5.1.2",
-    "brace-expansion": "^2.0.2"
+    "brace-expansion": "^2.0.2",
+    "glob": "^10.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.28.0",

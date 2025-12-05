@@ -3,12 +3,6 @@
   "version": "0.3.10",
   "description": "Cloud Pricing API",
   "main": "dist/server.js",
-  "ibmCloud": {
-    "contributors": [
-      "Chris Waddington <chrisw@ca.ibm.com> (@chrisw)",
-      "Hilton Lem <hlem@ca.ibm.com> (@hlem)"
-    ]
-  },
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",

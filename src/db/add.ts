@@ -11,23 +11,24 @@ async function addProducts(products: Product[]): Promise<void> {
   config.logger.info(`Updating ${products.length} products`);
 
   const insertSql = format(
-    `INSERT INTO %I ("productHash", "sku", "vendorName", "region", "service", "productFamily", "attributes", "prices") VALUES `,
+    `INSERT INTO %I ("productHash", "sku", "vendorName", "region", "service", "productFamily", "attributes", "prices", "last_updated") VALUES `,
     config.productTableName
   );
 
   // On a conflict on the product hash (vendorName + region + service + plan_id), then take the new sku, vendorName, region, service, productFamily, attributes, prices
   // Note: 'excluded' table refers to new values
   const onConflictSql = format(
-    ` 
-	  ON CONFLICT ("productHash") DO UPDATE SET
-	  "sku" = excluded."sku",
-	  "vendorName" = excluded."vendorName",
-	  "region" = excluded."region",
-	  "service" = excluded."service",
-	  "productFamily" = excluded."productFamily",
-	  "attributes" = excluded."attributes",
-	  "prices" = excluded."prices"
-	  `,
+    `
+   ON CONFLICT ("productHash") DO UPDATE SET
+   "sku" = excluded."sku",
+   "vendorName" = excluded."vendorName",
+   "region" = excluded."region",
+   "service" = excluded."service",
+   "productFamily" = excluded."productFamily",
+   "attributes" = excluded."attributes",
+   "prices" = excluded."prices",
+   "last_updated" = NOW()
+   `,
     config.productTableName
   );
 
@@ -63,7 +64,7 @@ async function addProducts(products: Product[]): Promise<void> {
     productHashToInsertRow.set(
       product.productHash,
       format(
-        `(%L, %L, %L, %L, %L, %L, %L, %L)`,
+        `(%L, %L, %L, %L, %L, %L, %L, %L, NOW())`,
         product.productHash,
         product.sku,
         product.vendorName,

@@ -5,6 +5,7 @@ import { generateProductHash, generatePriceHash } from '../db/helpers';
 import { upsertProducts } from '../db/upsert';
 import config from '../config';
 import { PricingModels } from './ibmCatalog';
+import { classifyHttpError, ErrorSeverity, retryOperation } from './errorUtils';
 
 // pricing api for IBM Kubernetes infrastructure
 const baseUrl = 'https://cloud.ibm.com/containers/cluster-management/api';
@@ -15,8 +16,7 @@ const REGIONS = ['jp-tok','au-syd', 'br-sao', 'ca-tor', 'eu-de', 'eu-es', 'eu-fr
 const PLATFORMS = ['kube', 'openshift'];
 const dataFolder = `data/`
 const FILE_PREFIX = `ibmkube`;
-const RETRY_DELAY_MS = 30000;
-const MAX_RETRIES = 3;
+const MAX_RETRIES = 5;
 const vendorName = 'ibm';
 const serviceId = 'containers-kubernetes';
 // any threshold of nine 9's will be taken to mean infinity and substituted with Inf
@@ -85,11 +85,6 @@ async function scrape(): Promise<void> {
   await loadAll(FILE_PREFIX);
 }
 
-function sleep(ms: number) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 async function downloadAll(provider: string): Promise<void[]> {
   const downloadPromises: Promise<void>[] = []
@@ -101,52 +96,42 @@ async function downloadAll(provider: string): Promise<void[]> {
   return Promise.all(downloadPromises)
 }
 
-async function download(platform: string, provider: string, region:string): Promise<void> {
+async function download(platform: string, provider: string, region: string): Promise<void> {
   config.logger.info(`Downloading pricing ${provider}, ${region}`);
 
-  let resp: AxiosResponse | null = null;
-  let success = false;
-  let attempts = 0;
-
-  do {
-    try {
-      attempts++;
-
-      resp = await axios({
-        method: 'get',
-        url: `${baseUrl}/prices/?platform=${platform}&country=USA&region=${region}&provider=${provider}`,
-        headers: {
-          'Accept': 'application/json',
-          'Accept-Language': 'en-US;q=0.9',
-          'Referer': 'https://cloud.ibm.com/containers/cluster-management/catalog/create',
-          'User-Agent': 'Mozilla/5.0'
-        },
-      });
-      success = true;
-    } catch (err: any) {
-      // Too many requests, sleep and retry
-      if (err.response.status === 429) {
-        config.logger.info('Too many requests, sleeping for 30s and retrying');
-        await sleep(RETRY_DELAY_MS);
-      } else {
-        throw err;
-      }
-    }
-  } while (!success && attempts < MAX_RETRIES);
+  const operation = async () => {
+    return axios({
+      method: 'get',
+      url: `${baseUrl}/prices/?platform=${platform}&country=USA&region=${region}&provider=${provider}`,
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Language': 'en-US;q=0.9',
+        'Referer': 'https://cloud.ibm.com/containers/cluster-management/catalog/create',
+        'User-Agent': 'Mozilla/5.0'
+      },
+      timeout: 30000,
+    });
+  };
 
   try {
-    const filename=`${dataFolder}${FILE_PREFIX}-${provider}-${platform}-${region}.json`
-    const writer = fs.createWriteStream(filename);
-    await new Promise((resolve, reject) => {
-      if (!resp) {
-        reject(new Error('empty response'));
-        return;
+    const resp = await retryOperation(operation, {
+      maxRetries: MAX_RETRIES,
+      shouldRetry: (error) => {
+        const severity = classifyHttpError(error, `Kubernetes ${platform}/${provider}/${region}`);
+        return severity === ErrorSeverity.RETRY;
+      },
+      onRetry: (attempt, delay) => {
+        config.logger.info(`Retrying ${platform}/${provider}/${region} (attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms)`);
       }
-      writer.write(JSON.stringify(resp.data), resolve);
     });
-    writer.close();
-  } catch (writeErr) {
-    config.logger.error(`Skipping IBM instances due to error ${writeErr}.`);
+    
+    const filename = `${dataFolder}${FILE_PREFIX}-${provider}-${platform}-${region}.json`;
+    await fs.promises.writeFile(filename, JSON.stringify(resp.data));
+    config.logger.info(`Saved ${filename}`);
+    
+  } catch (err: any) {
+    config.logger.error(`Failed to download ${platform}/${provider}/${region} after retries: ${err.message}`);
+    throw err; // Fatal - can't continue without this data
   }
 }
 
@@ -211,18 +196,31 @@ function getEndUsageAmount(
 function parsePrices(product: Product, productJson: ibmProductJson): Price[] {
   const prices: Price[] = [];
 
+  // Validate tiers array exists and is not empty
+  if (!productJson.tiers || productJson.tiers.length === 0) {
+    config.logger.warn(`No tiers found for product ${product.sku}`);
+    return prices;
+  }
+
   const numTiers = productJson.tiers.length;
   for (let i = 0; i < numTiers; i++) {
     const tierJson = productJson.tiers[i];
     const prevTierJson = i - 1 >= 0 ? productJson.tiers[i - 1] : { price: 0 };
+    
+    // Validate tier has a price
+    if (tierJson.price === undefined || tierJson.price === null) {
+      config.logger.warn(`Missing price for tier ${i} in product ${product.sku}`);
+      continue;
+    }
+    
     const price: Price = {
       priceHash: '',
       purchaseOption: '',
       tierModel: numTiers > 1 ? PricingModels.STEP_TIER : PricingModels.LINEAR,
       unit: productJson.unit,
-      USD: tierJson.price?.toString(),
-      effectiveDateStart: productJson.effective_from || '',
-      effectiveDateEnd: productJson.effective_until || '',
+      USD: tierJson.price.toString(),
+      effectiveDateStart: productJson.effective_from || '1970-01-01T00:00:00.000Z',
+      effectiveDateEnd: productJson.effective_until || undefined,
       startUsageAmount: getStartUsageAmount(
         productJson,
         tierJson,
@@ -299,7 +297,13 @@ function parseIbmProduct(productJson: ibmProductJson): Product[] {
   product.attributes = parseAttributes(productJson);
   product.attributes.ocpIncluded = productJson?.ocp_included ? 'true' : 'false'
   product.prices = parsePrices(product, productJson);
-  potentialProductList.push(product)
+  
+  // Only add product if it has prices
+  if (product.prices.length > 0) {
+    potentialProductList.push(product)
+  } else {
+    config.logger.warn(`Skipping product ${product.sku} - no valid prices found`);
+  }
 
   // If a flavor is found to have options, then each option will be added as a new product in our db, using the parent's
   // attributes to fill out the product's fields.
@@ -326,8 +330,8 @@ function parseIbmProduct(productJson: ibmProductJson): Product[] {
       tierModel: PricingModels.LINEAR,
       unit: productJson.unit,
       USD: (getFirstPrice(product.prices) + option.price).toString(),
-      effectiveDateStart: productJson.effective_from || '',
-      effectiveDateEnd: productJson.effective_until || '',
+      effectiveDateStart: productJson.effective_from || '1970-01-01T00:00:00.000Z',
+      effectiveDateEnd: productJson.effective_until || undefined,
     };
     const priceHash = generatePriceHash(newProduct, price);
     price.priceHash = priceHash
@@ -347,11 +351,10 @@ function isDeprecated(productJson: ibmProductJson): boolean {
 
 function load(filename: string): Promise<void> {
   try {
-    console.log(`loading ${filename}`);
+    config.logger.info(`Loading ${filename}`);
 
     const body = fs.readFileSync(filename);
-    const sample = body.toString();
-    const json = <productGroupJson>JSON.parse(sample);
+    const json = JSON.parse(body.toString()) as productGroupJson;
 
     const products: Product[] = [];
 
@@ -363,24 +366,53 @@ function load(filename: string): Promise<void> {
         }
       });
     });
+    
+    if (products.length === 0) {
+      config.logger.warn(`No products found in ${filename}`);
+      return Promise.resolve(); // Warning, not error
+    }
+    
+    config.logger.info(`Loaded ${products.length} products from ${filename}`);
     return upsertProducts(products);
+    
   } catch (e: any) {
-    config.logger.error(`Skipping file ${filename} due to error ${e}`);
-    config.logger.error(e.stack);
-    throw e
+    // Differentiate between parse errors and DB errors
+    if (e instanceof SyntaxError) {
+      config.logger.error(`Invalid JSON in ${filename}: ${e.message}`);
+    } else if (e.code === 'ENOENT') {
+      config.logger.error(`File not found: ${filename}`);
+    } else {
+      config.logger.error(`Failed to load ${filename}: ${e.message}`);
+      config.logger.error(e.stack);
+    }
+    
+    // Don't throw - log and continue with other files
+    // This allows partial success if some files fail
+    return Promise.resolve();
   }
 }
 
-async function loadAll(filePrefix: string): Promise<void[]> {
+async function loadAll(filePrefix: string): Promise<void> {
   const dataFolder = './data';
-  const loadPromises: Promise<void>[] = []
-
-  fs.readdirSync(dataFolder).forEach(filename => {
-    if (filename.startsWith(filePrefix)) {
-      loadPromises.push(load(`${dataFolder}/${filename}`))
-    }
-  });
-  return Promise.all(loadPromises)
+  const files = fs.readdirSync(dataFolder)
+    .filter(filename => filename.startsWith(filePrefix));
+  
+  if (files.length === 0) {
+    throw new Error(`No files found with prefix ${filePrefix} in ${dataFolder}`);
+  }
+  
+  config.logger.info(`Loading ${files.length} Kubernetes pricing files`);
+  
+  const loadPromises = files.map(filename => load(`${dataFolder}/${filename}`));
+  const results = await Promise.allSettled(loadPromises);
+  
+  const successful = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.filter(r => r.status === 'rejected').length;
+  
+  config.logger.info(`Loaded ${successful}/${files.length} files successfully`);
+  if (failed > 0) {
+    config.logger.warn(`${failed} files failed to load`);
+  }
 }
 
 export default {

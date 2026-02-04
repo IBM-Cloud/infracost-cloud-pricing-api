@@ -21,6 +21,7 @@ export async function createProductsTable(
         "productFamily" text DEFAULT ''::text NOT NULL,
         attributes jsonb NOT NULL,
         prices jsonb NOT NULL,
+        last_updated timestamp DEFAULT NOW() NOT NULL,
         CONSTRAINT %I PRIMARY KEY("productHash")
       )
     `,

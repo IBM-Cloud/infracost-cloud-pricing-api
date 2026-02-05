@@ -10,6 +10,7 @@ import type { Product, Price } from '../db/types';
 import { generateProductHash } from '../db/helpers';
 import addProducts from '../db/add';
 import config from '../config';
+import { classifyHttpError, ErrorSeverity, retryOperation, createProgressTracker } from './errorUtils';
 
 const DEBUG = false;
 const saasProductFileName = `data/ibm-catalog-saas-products.json`;
@@ -254,6 +255,12 @@ function getPrices(
       return prices;
     }
     for (const [partNumber, costs] of Object.entries(amounts[geoKey])) {
+      // Validate that metrics exist for this part number
+      if (!metrics[partNumber]) {
+        config.logger.warn(`Missing metrics for part number ${partNumber}`);
+        continue;
+      }
+      
       const {
         tierModel,
         chargeUnitName,
@@ -266,10 +273,23 @@ function getPrices(
       for (const [i, cost] of Object.entries(costs)) {
         const prevCost = costs[Number(i) - 1];
         const { price, quantity_tier: quantityTier } = cost;
+        
+        // Validate price and quantity tier
+        if (price === undefined || price === null || quantityTier === undefined || quantityTier === null) {
+          config.logger.warn(`Invalid price or quantity tier for part number ${partNumber}`);
+          continue;
+        }
+        
+        const chargeQty = parseInt(chargeUnitQty ?? '1', 10);
+        if (isNaN(chargeQty) || chargeQty === 0) {
+          config.logger.warn(`Invalid chargeUnitQty for part number ${partNumber}: ${chargeUnitQty}`);
+          continue;
+        }
+        
         prices.push({
           priceHash: `${chargeUnitName}-${chargeUnitQty}-${country}-${currency}-${quantityTier}-${partNumber}`,
           purchaseOption: String(chargeUnitQty),
-          USD: String(price / parseInt(chargeUnitQty ?? '1', 10)),
+          USD: String(price / chargeQty),
           startUsageAmount: prevCost?.quantity_tier
             ? String(prevCost?.quantity_tier)
             : '0',
@@ -277,7 +297,7 @@ function getPrices(
           tierModel,
           description: chargeUnit,
           unit: chargeUnitName ?? '',
-          effectiveDateStart: effectiveFrom ?? new Date().toISOString(),
+          effectiveDateStart: effectiveFrom ?? '1970-01-01T00:00:00.000Z',
           effectiveDateEnd: effectiveUntil,
           country,
           currency,
@@ -539,23 +559,32 @@ async function getCatalogEntries(
   const servicesArray = [];
 
   while (next) {
-    const { data: response } = await axiosClient.get<{
-      count: number;
-      resources: CatalogEntry[];
-    }>('/', {
-      params: {
-        ...params,
-        _limit: limit,
-        _offset: offset,
-      },
-    });
-    if (response.resources?.length) {
-      servicesArray.push(...response.resources);
-    }
-    if (!response.count || offset > response.count) {
+    try {
+      const { data: response } = await axiosClient.get<{
+        count: number;
+        resources: CatalogEntry[];
+      }>('/', {
+        params: {
+          ...params,
+          _limit: limit,
+          _offset: offset,
+        },
+      });
+      if (response.resources?.length) {
+        servicesArray.push(...response.resources);
+      }
+      if (!response.count || offset >= response.count) {
+        next = false;
+      }
+      offset += limit;
+    } catch (error) {
+      const severity = classifyHttpError(error, 'getCatalogEntries');
+      if (severity === ErrorSeverity.FATAL) {
+        throw error;
+      }
+      config.logger.error(`Failed to fetch catalog entries at offset ${offset}, stopping pagination`);
       next = false;
     }
-    offset += limit;
   }
   return servicesArray;
 }
@@ -564,60 +593,82 @@ async function fetchPricingForProduct(
   axiosClient: AxiosInstance,
   product: GlobalCatalogV1.CatalogEntry
 ): Promise<CatalogEntry> {
-  const { data: tree } = await axiosClient.get<CatalogEntry>(
-    `/${product.id as string}`,
-    {
-      params: {
-        noLocations: true,
-        depth: 10,
-        include: 'id:kind:name:tags:pricing_tags:geo_tags:metadata',
-      },
-    }
-  );
-  const stack = [tree];
-  while (stack.length > 0) {
-    // Couldn't get here if the were no elems on the stack
-    const currentElem = stack.pop() as CatalogEntry;
-    // For example satellite located deployments area also priced on the plan level
-    if (currentElem.kind === 'plan' && currentElem.children) {
-      const deploymentChildren = currentElem.children.filter(
-        (child) => child.kind === 'deployment'
-      );
-      const chunks = _.chunk(deploymentChildren, 8);
-      for (const elements of chunks) {
-        await Promise.all(
-          elements.map(async (element): Promise<void> => {
-            try {
-              const { data: pricingObject } = await axiosClient.get<PricingGet>(
-                `/${element.id}/pricing`
-              );
-              if (!pricingObject) {
-                return;
-              }
-              // eslint-disable-next-line no-param-reassign
-              element.pricingChildren = [pricingObject];
-            } catch (e: unknown) {
-              if (axios.isAxiosError(e)) {
-                if (!e?.response?.status || e?.response?.status !== 404) {
-                  config.logger.error(e.message);
-                }
-              } else if (e instanceof Error) {
-                config.logger.error(e.message);
-              } else {
-                config.logger.error(e);
-              }
-            }
-          })
+  const MAX_RETRIES = 3;
+
+  const operation = async () => {
+    const { data: tree } = await axiosClient.get<CatalogEntry>(
+      `/${product.id as string}`,
+      {
+        params: {
+          noLocations: true,
+          depth: 10,
+          include: 'id:kind:name:tags:pricing_tags:geo_tags:metadata',
+        },
+      }
+    );
+
+    const stack = [tree];
+    while (stack.length > 0) {
+      // Couldn't get here if there were no elems on the stack
+      const currentElem = stack.pop() as CatalogEntry;
+      // For example satellite located deployments are also priced on the plan level
+      if (currentElem.kind === 'plan' && currentElem.children) {
+        const deploymentChildren = currentElem.children.filter(
+          (child) => child.kind === 'deployment'
         );
+        const chunks = _.chunk(deploymentChildren, 8);
+        for (const elements of chunks) {
+          await Promise.all(
+            elements.map(async (element): Promise<void> => {
+              try {
+                const { data: pricingObject } = await axiosClient.get<PricingGet>(
+                  `/${element.id}/pricing`
+                );
+                if (!pricingObject) {
+                  return;
+                }
+                // eslint-disable-next-line no-param-reassign
+                element.pricingChildren = [pricingObject];
+              } catch (e: unknown) {
+                const severity = classifyHttpError(e, `pricing for ${element.id}`);
+                if (severity === ErrorSeverity.FATAL) {
+                  throw e;
+                }
+                // Skip or retry handled by classification
+              }
+            })
+          );
+        }
+      }
+      if (currentElem.children && currentElem.children.length > 0) {
+        for (const child of currentElem.children) {
+          stack.push(child);
+        }
       }
     }
-    if (currentElem.children && currentElem.children.length > 0) {
-      for (const child of currentElem.children) {
-        stack.push(child);
+    return tree;
+  };
+
+  try {
+    return await retryOperation(operation, {
+      maxRetries: MAX_RETRIES,
+      shouldRetry: (error) => {
+        const severity = classifyHttpError(error, `product ${product.name}`);
+        return severity === ErrorSeverity.RETRY;
+      },
+      onRetry: (attempt, delay) => {
+        config.logger.info(`Retrying ${product.name} (attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms)`);
       }
+    });
+  } catch (error) {
+    const severity = classifyHttpError(error, `product ${product.name}`);
+    if (severity === ErrorSeverity.FATAL) {
+      throw error;
     }
+    // Return empty tree for skipped products
+    config.logger.warn(`Skipping product ${product.name} due to error`);
+    return { ...product, children: [] } as CatalogEntry;
   }
-  return tree;
 }
 
 async function scrape(): Promise<void> {
@@ -641,6 +692,7 @@ async function scrape(): Promise<void> {
   // We won't need token refreshing
   const axiosClient = axios.create({
     baseURL,
+    timeout: 60000, // 60 second timeout for catalog operations
     headers: {
       Authorization: `Bearer ${await tokenManager.getToken()}`,
     },
@@ -652,18 +704,28 @@ async function scrape(): Promise<void> {
     ...serviceParams,
   });
 
-  for (const service of serviceEntries) {
-    if (service.kind === 'service' && !skipList.includes(service.name)) {
-      config.logger.info(`Scraping pricing for ${service.name}`);
-      const tree = await fetchPricingForProduct(axiosClient, service);
-      saasResults.push(tree);
-    }
+  const filteredServices = serviceEntries.filter(
+    s => s.kind === 'service' && s.name && !skipList.includes(s.name)
+  );
+
+  const serviceProgress = createProgressTracker(filteredServices.length, 'Service scraping');
+  for (const service of filteredServices) {
+    config.logger.info(`Scraping pricing for ${service.name}`);
+    const tree = await fetchPricingForProduct(axiosClient, service);
+    saasResults.push(tree);
+    serviceProgress.increment();
   }
 
   const saasProducts = parseProducts(saasResults);
+  if (saasProducts.length === 0) {
+    config.logger.warn('No SaaS products scraped - possible scraper failure');
+  } else {
+    config.logger.info(`Scraped ${saasProducts.length} SaaS products`);
+  }
+
   if (DEBUG) {
     dataString = JSON.stringify(saasProducts);
-    await writeFile(saasProductFileName, dataString);  
+    await writeFile(saasProductFileName, dataString);
   }
 
   config.logger.info('Fetching Infrastructure products...');
@@ -672,39 +734,59 @@ async function scrape(): Promise<void> {
     ...infrastuctureParams,
   });
 
-  for (const infra of infrastructureEntries) {
-    if (infra.kind === 'iaas' && !skipList.includes(infra.name)) {
-      config.logger.info(`Scraping pricing for ${infra.name}`);
-      const tree = await fetchPricingForProduct(axiosClient, infra);
-      iaasResults.push(tree);
-    }
+  const filteredInfra = infrastructureEntries.filter(
+    i => i.kind === 'iaas' && i.name && !skipList.includes(i.name)
+  );
+
+  const infraProgress = createProgressTracker(filteredInfra.length, 'Infrastructure scraping');
+  for (const infra of filteredInfra) {
+    config.logger.info(`Scraping pricing for ${infra.name}`);
+    const tree = await fetchPricingForProduct(axiosClient, infra);
+    iaasResults.push(tree);
+    infraProgress.increment();
   }
 
   const iaasProducts = parseProducts(iaasResults);
-  if (DEBUG) {
-    dataString = JSON.stringify(iaasProducts);
-    await writeFile(iaasProductFileName, dataString);  
+  if (iaasProducts.length === 0) {
+    config.logger.warn('No IaaS products scraped - possible scraper failure');
+  } else {
+    config.logger.info(`Scraped ${iaasProducts.length} IaaS products`);
   }
 
-  
+  if (DEBUG) {
+    dataString = JSON.stringify(iaasProducts);
+    await writeFile(iaasProductFileName, dataString);
+  }
+
+
   config.logger.info('Fetching Platform Service products...');
 
   const platformServiceEntries = await getCatalogEntries(axiosClient, {
     ...platformServiceParams,
   });
 
-  for (const ps of platformServiceEntries) {
-    if (ps.kind === 'platform_service' && !skipList.includes(ps.name)) {
-      config.logger.info(`Scraping pricing for ${ps.name}`);
-      const tree = await fetchPricingForProduct(axiosClient, ps);
-      psResults.push(tree);
-    }
+  const filteredPS = platformServiceEntries.filter(
+    ps => ps.kind === 'platform_service' && ps.name && !skipList.includes(ps.name)
+  );
+
+  const psProgress = createProgressTracker(filteredPS.length, 'Platform Service scraping');
+  for (const ps of filteredPS) {
+    config.logger.info(`Scraping pricing for ${ps.name}`);
+    const tree = await fetchPricingForProduct(axiosClient, ps);
+    psResults.push(tree);
+    psProgress.increment();
   }
 
   const psProducts = parseProducts(psResults, 'service');
+  if (psProducts.length === 0) {
+    config.logger.warn('No Platform Service products scraped - possible scraper failure');
+  } else {
+    config.logger.info(`Scraped ${psProducts.length} Platform Service products`);
+  }
+
   if (DEBUG) {
     dataString = JSON.stringify(psProducts);
-    await writeFile(platformProductFileName, dataString);  
+    await writeFile(platformProductFileName, dataString);
   }
 
   config.logger.info('Fetching Composite products...');
@@ -713,15 +795,24 @@ async function scrape(): Promise<void> {
     ...compositeServiceParams,
   });
 
-  for (const service of compositeServiceEntries) {
-    if (!compositeSkipList.includes(service.name)) {
-      config.logger.info(`Scraping pricing for ${service.name}`);
-      const tree = await fetchPricingForProduct(axiosClient, service);
-      compositeResults.push(tree);
-    }
+  const filteredComposite = compositeServiceEntries.filter(
+    s => s.name && !compositeSkipList.includes(s.name)
+  );
+
+  const compositeProgress = createProgressTracker(filteredComposite.length, 'Composite scraping');
+  for (const service of filteredComposite) {
+    config.logger.info(`Scraping pricing for ${service.name}`);
+    const tree = await fetchPricingForProduct(axiosClient, service);
+    compositeResults.push(tree);
+    compositeProgress.increment();
   }
 
   const compositeProducts = parseProducts(compositeResults, 'service');
+  if (compositeProducts.length === 0) {
+    config.logger.warn('No Composite products scraped - possible scraper failure');
+  } else {
+    config.logger.info(`Scraped ${compositeProducts.length} Composite products`);
+  }
 
   if (DEBUG) {
     dataString = JSON.stringify(compositeProducts);

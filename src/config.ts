@@ -83,12 +83,7 @@ async function pg(): Promise<Pool> {
       }
 
     } else {
-      logger.warn(`Error POSTGRES_CREDENTIALS are missing`)
-      user = process.env.POSTGRES_USER || 'postgres'; 
-      password = process.env.POSTGRES_PASSWORD || '';
-      host = process.env.POSTGRES_HOST || 'localhost';
-      port = Number(process.env.POSTGRES_PORT) || 5432;
-      cert64 = process.env.POSTGRES_CERTIFICATE_BASE64;
+      logger.error(`Error parsing POSTGRES_CREDENTIALS`)
     }
 
     let poolConfig: PoolConfig = {
@@ -161,7 +156,7 @@ const config = {
   ibmCloudApiKey: process.env.IBM_CLOUD_API_KEY,
   region: process.env.CLOUD_REGION || 'local',
   hostname: process.env.HOSTNAME || 'local',
-  version: process.env.IMAGE_VERSION?.split(":")[1] || 'local' 
+  version: process.env.IMAGE_VERSION?.split(":")[1] || 'local'
 };
 
 export default config;

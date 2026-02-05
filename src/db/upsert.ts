@@ -10,12 +10,12 @@ async function upsertProducts(products: Product[]): Promise<void> {
   config.logger.info(`Upserting ${products.length} products`);
 
   const insertSql = format(
-    `INSERT INTO %I ("productHash", "sku", "vendorName", "region", "service", "productFamily", "attributes", "prices") VALUES `,
+    `INSERT INTO %I ("productHash", "sku", "vendorName", "region", "service", "productFamily", "attributes", "prices", "last_updated") VALUES `,
     config.productTableName
   );
 
   const onConflictSql = format(
-    ` 
+    `
     ON CONFLICT ("productHash") DO UPDATE SET
     "sku" = excluded."sku",
     "vendorName" = excluded."vendorName",
@@ -23,7 +23,8 @@ async function upsertProducts(products: Product[]): Promise<void> {
     "service" = excluded."service",
     "productFamily" = excluded."productFamily",
     "attributes" = excluded."attributes",
-    "prices" = %I."prices" || excluded."prices"        
+    "prices" = %I."prices" || excluded."prices",
+    "last_updated" = NOW()
     `,
     config.productTableName
   );
@@ -60,7 +61,7 @@ async function upsertProducts(products: Product[]): Promise<void> {
     productHashToInsertRow.set(
       product.productHash,
       format(
-        `(%L, %L, %L, %L, %L, %L, %L, %L)`,
+        `(%L, %L, %L, %L, %L, %L, %L, %L, NOW())`,
         product.productHash,
         product.sku,
         product.vendorName,
@@ -90,7 +91,7 @@ async function upsertPrice(product: Product, price: Price): Promise<void> {
   await retryDatabaseOperation(async () =>
     pool.query(
       format(
-        `UPDATE %I SET "prices" = "prices" || %L WHERE "productHash" = %L`,
+        `UPDATE %I SET "prices" = "prices" || %L, "last_updated" = NOW() WHERE "productHash" = %L`,
         config.productTableName,
         { [price.priceHash]: [price] },
         product.productHash

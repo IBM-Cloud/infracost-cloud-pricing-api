@@ -3,6 +3,12 @@
   "version": "0.3.10",
   "description": "Cloud Pricing API",
   "main": "dist/server.js",
+  "ibmCloud": {
+    "contributors": [
+      "Chris Waddington <chrisw@ca.ibm.com> (@chrisw)",
+      "Hilton Lem <hlem@ca.ibm.com> (@hlem)"
+    ]
+  },
   "scripts": {
     "dev": "nodemon src/server.ts",
     "build": "tsc",
@@ -37,7 +43,7 @@
     }
   ],
   "dependencies": {
-    "@apollo/server": "4.13.0",
+    "@apollo/server": "^4.13.0",
     "@console/console-platform-log4js-utils": "^4.1.0",
     "@graphql-tools/schema": "^9.0.12",
     "@graphql-tools/utils": "^9.1.3",
@@ -67,7 +73,7 @@
     "graphql": "^16.9.0",
     "graphql-tag": "^2.12.6",
     "graphql-upload": "^16.0.2",
-    "lodash": "^4.17.21",
+    "lodash": "^4.17.23",
     "log4js": "^6.9.1",
     "mingo": "^6.1.2",
     "node-cache": "^5.1.2",
@@ -94,7 +100,7 @@
     "eslint-plugin-import": "^2.32.0",
     "globals": "^15.13.0",
     "nodemon": "^3.1.10",
-    "ts-node": "^10.9.1",
+    "ts-node": "^10.9.2",
     "typescript": "^4.9.5",
     "typescript-eslint": "^8.36.0"
   },

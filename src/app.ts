@@ -7,15 +7,12 @@ import { ApolloServerErrorCode } from '@apollo/server/errors';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import { GraphQLError, GraphQLFormattedError } from 'graphql';
 import * as log4js from 'log4js';
-import path from 'path';
 import cors from 'cors';
 import config from './config';
 import ApolloLogger from './utils/apolloLogger';
 import getResolvers from './resolvers';
 import typeDefs from './typeDefs';
 import health from './health';
-import auth from './auth';
-import home from './home';
 import { Product } from './db/types';
 import { ErrorHandler } from './utils/errorHandler';
 
@@ -56,13 +53,6 @@ async function createApp<TContext>(
 
   const logger = opts.logger || config.logger;
 
-  if (!opts.disableStats) {
-    app.use(express.static(path.join(__dirname, 'public')));
-    app.set('views', path.join(__dirname, 'views'));
-    app.set('view engine', 'ejs');
-    app.use(home);
-  }
-
   app.use(express.json());
   app.use(
     (err: ResponseError, _req: Request, res: Response, next: NextFunction) => {
@@ -84,15 +74,6 @@ async function createApp<TContext>(
   }
 
   app.use(health);
-
-  if (!opts.disableAuth) {
-    app.use(auth);
-  }
-
-  if (!opts.disableStats) {
-    // app.use(events);
-    // app.use(stats);
-  }
 
     // Big query objects with large keys or too many fields could trip this check
     app.use((req: Request, res: Response, next: NextFunction) => {

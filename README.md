@@ -49,7 +49,6 @@ The following diagram shows an overview of the architecture.
 
 ![Deployment overview](.github/assets/deployment_overview.png "Deployment overview")
 
-The pricing DB dump is downloaded from Infracost's API (requires an Infracost API key) as that simplifies the task of keeping prices up-to-date. We have created one job that you can run once a week to download the latest prices. This provides you with:
 1. **Fast updates**: our aim is to enable you to deploy this service in less than 15mins. Some cloud vendors paginates API calls to 100 resources at a time, and making too many requests result in errors; fetching prices directly from them takes more than an hour.
 2. **Complete updates**: We run [integration tests](https://github.com/infracost/infracost/actions) to ensure that the CLI is using the correct prices. In the past, there have been cases when cloud providers have tweaked their pricing API data that caused direct downloads to fail. With this method, we check the pricing data passes our integration tests before publishing them, and everyone automatically gets the entire up-to-date data. The aim is reduce the risk of failed or partial updates.
 
@@ -82,15 +81,15 @@ See [our Helm Chart](https://github.com/infracost/helm-charts/tree/master/charts
     cd cloud-pricing-api
     ```
 
-2. Set the `INFRACOST_API_KEY` environment variable with your Infracost API key (obtained from step 1 in the [Usage](#usage) section). Then run `docker-compose run init_job`. This will start a PostgreSQL DB container and an init container that loads the pricing data. The init container will take a few minutes and exit after the Docker compose logs show `Completed: loading data into DB`.
+2. Run `docker-compose run init_job`. This will start a PostgreSQL DB container and an init container that loads the pricing data. The init container will take a few minutes and exit after the Docker compose logs show `Completed: loading data into DB`.
 
 3. Run `docker-compose up api`. This will start the Cloud Pricing API.
 
-4. Prices can be kept up-to-date by running the update job once a week (requires `INFRACOST_API_KEY` environment variable), for example from cron:
+4. Prices can be kept up-to-date by running the update job once a week, for example from cron:
 
     ```sh
     # Add a weekly cron job to update the pricing data. The cron entry should look something like:
-    0 4 * * SUN INFRACOST_API_KEY=your_key docker-compose run --rm update_job npm run job:update >> /var/log/cron.log 2>&1
+    0 4 * * SUN docker-compose run --rm update_job npm run job:update >> /var/log/cron.log 2>&1
     ```
 
 5. When using the CLI locally, run the following command to point your CLI to your self-hosted Cloud Pricing API:

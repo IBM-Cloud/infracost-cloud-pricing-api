@@ -146,7 +146,6 @@ const config = {
   disableTelemetry:
     process.env.DISABLE_TELEMETRY?.toLowerCase() === 'true' ||
     process.env.DISABLE_TELEMETRY === '1',
-  selfHostedInfracostAPIKey: process.env.SELF_HOSTED_INFRACOST_API_KEY,
   cache,
   port: Number(process.env.PORT) || 4000,
   gcpApiKey: process.env.GCP_API_KEY,

@@ -80,7 +80,7 @@
     "yargs": "^17.6.2"
   },
   "overrides": {
-    "minimatch": "^5.1.2",
+    "minimatch": "^5.1.7",
     "brace-expansion": "^2.0.2"
   },
   "devDependencies": {

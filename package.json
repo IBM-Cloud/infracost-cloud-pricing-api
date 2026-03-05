@@ -60,9 +60,9 @@
     "cpy-cli": "^5.0.0",
     "decimal.js": "^10.4.2",
     "dotenv": "^16.0.3",
-    "ejs": "^3.1.10",
+    "ejs": "^4.0.1",
     "express": "^4.21.2",
-    "glob": "^10.5.0",
+    "glob": "^11.1.0",
     "googleapis": "^144.0.0",
     "graphql": "^16.9.0",
     "graphql-tag": "^2.12.6",
@@ -80,7 +80,7 @@
     "yargs": "^17.6.2"
   },
   "overrides": {
-    "minimatch": "^5.1.7",
+    "minimatch": "^10.2.4",
     "brace-expansion": "^2.0.2"
   },
   "devDependencies": {

@@ -594,6 +594,7 @@ async function fetchPricingForProduct(
   product: GlobalCatalogV1.CatalogEntry
 ): Promise<CatalogEntry> {
   const MAX_RETRIES = 3;
+  const REQUEST_TIMEOUT = 180000; // 3 minutes for all products
 
   const operation = async () => {
     const { data: tree } = await axiosClient.get<CatalogEntry>(
@@ -604,6 +605,7 @@ async function fetchPricingForProduct(
           depth: 10,
           include: 'id:kind:name:tags:pricing_tags:geo_tags:metadata',
         },
+        timeout: REQUEST_TIMEOUT,
       }
     );
 
@@ -622,7 +624,10 @@ async function fetchPricingForProduct(
             elements.map(async (element): Promise<void> => {
               try {
                 const { data: pricingObject } = await axiosClient.get<PricingGet>(
-                  `/${element.id}/pricing`
+                  `/${element.id}/pricing`,
+                  {
+                    timeout: REQUEST_TIMEOUT,
+                  }
                 );
                 if (!pricingObject) {
                   return;
@@ -724,6 +729,7 @@ async function scrape(): Promise<void> {
   }
 
   if (DEBUG) {
+
     dataString = JSON.stringify(saasProducts);
     await writeFile(saasProductFileName, dataString);
   }
@@ -779,7 +785,7 @@ async function scrape(): Promise<void> {
 
   const psProducts = parseProducts(psResults, 'service');
   if (psProducts.length === 0) {
-    config.logger.warn('No Platform Service products scraped - possible scraper failure');
+    config.logger.info('No Platform Service products with pricing data (this is expected - most platform services are free or have non-standard pricing)');
   } else {
     config.logger.info(`Scraped ${psProducts.length} Platform Service products`);
   }

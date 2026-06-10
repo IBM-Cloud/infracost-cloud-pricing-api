@@ -35,6 +35,7 @@ type ibmProductJson = {
   flavor: string | '';
   operating_system: string | '';
   unit: string;
+  unit_name: string | '';
   price: string;
   country: string | '';
   currency: string;
@@ -180,7 +181,7 @@ function getEndUsageAmount(
  * ------------------- | -------------------------
  * priceHash:          | md5()
  * purchaseOption:     | ''
- * unit:               | unit
+ * unit:               | unit_name || unit (except if unit is "hourly" it is replaced with "INSTANCE_HOURS")
  * tierModel:          | PricingModels.LINEAR || PricingModels.STEP_TIER
  * USD?:               | ibmTiersJson.price
  * CNY?:               | NOT USED
@@ -324,11 +325,12 @@ function parseIbmProduct(productJson: ibmProductJson): Product[] {
     } else {
       newProduct.attributes.ocpIncluded = 'na'
     }
+    const chargeUnit = productJson.unit_name || (productJson.unit == "hourly" ? "INSTANCE_HOURS" : productJson.unit);
     const price: Price = {
       priceHash: '',
       purchaseOption: '',
       tierModel: PricingModels.LINEAR,
-      unit: productJson.unit,
+      unit: chargeUnit,
       USD: (getFirstPrice(product.prices) + option.price).toString(),
       effectiveDateStart: productJson.effective_from || '1970-01-01T00:00:00.000Z',
       effectiveDateEnd: productJson.effective_until || undefined,

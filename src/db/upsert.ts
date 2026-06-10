@@ -23,7 +23,7 @@ async function upsertProducts(products: Product[]): Promise<void> {
     "service" = excluded."service",
     "productFamily" = excluded."productFamily",
     "attributes" = excluded."attributes",
-    "prices" = %I."prices" || excluded."prices",
+    "prices" = excluded."prices",
     "last_updated" = NOW()
     `,
     config.productTableName

@@ -20,6 +20,7 @@
     "data:download": "node dist/cmd/dataDownload.js",
     "data:load": "node dist/cmd/dataLoad.js",
     "data:status": "node dist/cmd/dataStatus.js",
+    "data:scrape:kube": "node dist/cmd/dataScrape.js --only=ibm:kubernetes",
     "job:init": "npm run db:setup && npm run job:update",
     "job:update": "npm run data:download && npm run data:load",
     "db:setup:dev": "ts-node src/cmd/dbSetup.ts",

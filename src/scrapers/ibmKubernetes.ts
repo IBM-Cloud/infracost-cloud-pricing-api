@@ -213,12 +213,13 @@ function parsePrices(product: Product, productJson: ibmProductJson): Price[] {
       config.logger.warn(`Missing price for tier ${i} in product ${product.sku}`);
       continue;
     }
-    
+    const chargeUnit = productJson.unit_name || (productJson.unit == "hourly" ? "INSTANCE_HOURS" : productJson.unit);
+
     const price: Price = {
       priceHash: '',
       purchaseOption: '',
       tierModel: numTiers > 1 ? PricingModels.STEP_TIER : PricingModels.LINEAR,
-      unit: productJson.unit,
+      unit: chargeUnit,
       USD: tierJson.price.toString(),
       effectiveDateStart: productJson.effective_from || '1970-01-01T00:00:00.000Z',
       effectiveDateEnd: productJson.effective_until || undefined,

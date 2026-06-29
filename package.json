@@ -44,7 +44,7 @@
     }
   ],
   "dependencies": {
-    "@apollo/server": "5.5.1",
+    "@apollo/server": "^5.5.0",
     "@as-integrations/express4": "1.1.2",
     "@console/console-platform-log4js-utils": "^4.1.0",
     "@graphql-tools/schema": "^9.0.12",
@@ -70,7 +70,7 @@
     "ejs": "^4.0.1",
     "express": "^4.21.2",
     "glob": "^11.1.0",
-    "googleapis": "171.4.0",
+    "googleapis": "^171.4.0",
     "graphql": "^16.9.0",
     "graphql-tag": "^2.12.6",
     "graphql-upload": "^16.0.2",
@@ -83,7 +83,7 @@
     "pg-format": "^1.0.4",
     "prettier": "^2.8.1",
     "progress": "^2.0.3",
-    "tmp": "0.2.4",
+    "tmp": "^0.2.4",
     "yargs": "^17.6.2"
   },
   "overrides": {

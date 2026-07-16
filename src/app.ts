@@ -3,7 +3,7 @@ import { ApolloServer, ApolloServerOptions, BaseContext } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { ApolloServerPluginCacheControl } from '@apollo/server/plugin/cacheControl';
-import { GraphQLError, GraphQLFormattedError } from 'graphql';
+import { GraphQLFormattedError } from 'graphql';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import * as log4js from 'log4js';
 import cors from 'cors';
@@ -88,17 +88,12 @@ async function createApp<TContext>(
     });
 
   const errorFormatter = (formattedError: GraphQLFormattedError, err: unknown): GraphQLFormattedError => {
-    const resp: GraphQLFormattedError = {
-      message: formattedError.message
+    return {
+      message: 'Invalid Request: ' + formattedError.message,
+      extensions: {
+        code: 'GRAPHQL_VALIDATION_FAILED'
+      }
     };
-    if (formattedError.extensions?.code === 'GRAPHQL_VALIDATION_FAILED') {
-      throw new GraphQLError("Invalid Request", {
-        extensions: {
-          code: 'GRAPHQL_VALIDATION_FAILED'
-        }
-      })
-    }
-    return resp;
   };
   
   const apolloConfig: ApolloServerOptions<BaseContext> = {

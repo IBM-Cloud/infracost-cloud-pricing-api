@@ -15,6 +15,9 @@ import health from './health';
 import { Product } from './db/types';
 import { ErrorHandler } from './utils/errorHandler';
 
+// limit graphql batch sizes
+const maxBatchSize = 200;
+
 // Initialize error handler
 const errorHandler = new ErrorHandler({
   exitOnUncaught: false
@@ -86,6 +89,15 @@ async function createApp<TContext>(
         next();
       }
     });
+
+  // Limit batch size to prevent DoS via unbounded batched requests
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (Array.isArray(req.body) && req.body.length > maxBatchSize) {
+      res.status(400).json({ status: 'error', message: 'Batch size limit exceeded' });
+    } else {
+      next();
+    }
+  });
 
   const errorFormatter = (formattedError: GraphQLFormattedError, err: unknown): GraphQLFormattedError => {
     const resp: GraphQLFormattedError = {

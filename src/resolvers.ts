@@ -73,9 +73,10 @@ const getResolvers = <TContext>(
       const prices = mingo
         .find(product.prices, transformFilter(args.filter))
         .all() as Price[];
-      await convertCurrencies(prices);
+      const validPrices = filterPricesByValidity(prices);
+      await convertCurrencies(validPrices);
 
-      return prices;
+      return validPrices;
     },
   },
   Price:
@@ -112,6 +113,28 @@ function transformFilter(filter: Filter): MongoDbFilter {
     transformed[key][op] = value;
   });
   return transformed;
+}
+
+function filterPricesByValidity(prices: Price[]): Price[] {
+  const target = new Date();
+
+  return prices.filter((price) => {
+    const start = new Date(price.effectiveDateStart);
+    if (Number.isNaN(start.getTime()) || start > target) {
+      return false;
+    }
+
+    if (!price.effectiveDateEnd) {
+      return true;
+    }
+
+    const end = new Date(price.effectiveDateEnd);
+    if (Number.isNaN(end.getTime())) {
+      return true;
+    }
+
+    return end > target;
+  });
 }
 
 async function convertCurrencies(prices: Price[]) {

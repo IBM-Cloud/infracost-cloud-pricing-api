@@ -88,11 +88,13 @@
   },
   "overrides": {
     "minimatch": "^10.2.4",
-    "brace-expansion": "^2.0.2"
+    "brace-expansion": "^5.0.7",
+    "body-parser": "^1.20.6",
+    "js-yaml": "^4.3.0"
   },
   "devDependencies": {
-    "@babel/core": "^7.28.0",
-    "@babel/node": "7.28",
+    "@babel/core": "^8.0.1",
+    "@babel/node": "^8.0.1",
     "@eslint/js": "^9.17.0",
     "@types/express": "4.17.25",
     "@typescript-eslint/eslint-plugin": "^8.36.0",

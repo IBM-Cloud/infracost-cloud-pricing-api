@@ -3,7 +3,7 @@ import { ApolloServer, ApolloServerOptions, BaseContext } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express4';
 import { ApolloServerPluginLandingPageDisabled } from '@apollo/server/plugin/disabled';
 import { ApolloServerPluginCacheControl } from '@apollo/server/plugin/cacheControl';
-import { GraphQLFormattedError } from 'graphql';
+import { GraphQLFormattedError, GraphQLError, ValidationContext, ASTVisitor, FieldNode } from 'graphql';
 import { makeExecutableSchema } from '@graphql-tools/schema';
 import * as log4js from 'log4js';
 import cors from 'cors';
@@ -16,7 +16,26 @@ import { Product } from './db/types';
 import { ErrorHandler } from './utils/errorHandler';
 
 // limit graphql batch sizes
-const maxBatchSize = 200;
+const maxBatchSize = 40;
+
+// limit alias count per query document to prevent DoS via alias multiplication
+const maxAliasCount = 10;
+
+function maxAliasesRule(context: ValidationContext): ASTVisitor {
+  let aliasCount = 0;
+  return {
+    Field(node: FieldNode) {
+      if (node.alias) {
+        aliasCount++;
+        if (aliasCount > maxAliasCount) {
+          context.reportError(
+            new GraphQLError(`Alias limit of ${maxAliasCount} exceeded`)
+          );
+        }
+      }
+    },
+  };
+}
 
 // Initialize error handler
 const errorHandler = new ErrorHandler({
@@ -99,9 +118,9 @@ async function createApp<TContext>(
     }
   });
 
-  const errorFormatter = (formattedError: GraphQLFormattedError, err: unknown): GraphQLFormattedError => {
+  const errorFormatter = (_formattedError: GraphQLFormattedError, _err: unknown): GraphQLFormattedError => {
     return {
-      message: 'Invalid Request: ' + formattedError.message,
+      message: 'Invalid Request',
       extensions: {
         code: 'GRAPHQL_VALIDATION_FAILED'
       }
@@ -113,6 +132,7 @@ async function createApp<TContext>(
       typeDefs,
       resolvers: getResolvers<TContext>(opts),
     }),
+    validationRules: [maxAliasesRule],
     introspection: false,
     plugins: [
       ApolloServerPluginLandingPageDisabled(),

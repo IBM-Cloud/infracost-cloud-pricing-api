@@ -589,13 +589,43 @@ async function getCatalogEntries(
   return servicesArray;
 }
 
+const DEPLOYMENT_CHUNK_SIZE = 4;
+const MAX_RETRIES = 3;
+const REQUEST_TIMEOUT = 180000; // 3 minutes for all products
+const INTER_PRODUCT_DELAY_MS = 200; // avoid burst-firing the Global Catalog API
+
+async function fetchDeploymentPricing(
+  axiosClient: AxiosInstance,
+  element: CatalogEntry
+): Promise<void> {
+  await retryOperation(
+    async () => {
+      const { data: pricingObject } = await axiosClient.get<PricingGet>(
+        `/${element.id}/pricing`,
+        { timeout: REQUEST_TIMEOUT }
+      );
+      if (pricingObject) {
+        // eslint-disable-next-line no-param-reassign
+        element.pricingChildren = [pricingObject];
+      }
+    },
+    {
+      maxRetries: MAX_RETRIES,
+      shouldRetry: (error) => {
+        const severity = classifyHttpError(error, `pricing for ${element.id}`);
+        return severity === ErrorSeverity.RETRY;
+      },
+      onRetry: (attempt, delay) => {
+        config.logger.info(`Retrying pricing for ${element.id} (attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms)`);
+      },
+    }
+  );
+}
+
 async function fetchPricingForProduct(
   axiosClient: AxiosInstance,
   product: GlobalCatalogV1.CatalogEntry
 ): Promise<CatalogEntry> {
-  const MAX_RETRIES = 3;
-  const REQUEST_TIMEOUT = 180000; // 3 minutes for all products
-
   const operation = async () => {
     const { data: tree } = await axiosClient.get<CatalogEntry>(
       `/${product.id as string}`,
@@ -618,28 +648,19 @@ async function fetchPricingForProduct(
         const deploymentChildren = currentElem.children.filter(
           (child) => child.kind === 'deployment'
         );
-        const chunks = _.chunk(deploymentChildren, 8);
+        const chunks = _.chunk(deploymentChildren, DEPLOYMENT_CHUNK_SIZE);
         for (const elements of chunks) {
           await Promise.all(
             elements.map(async (element): Promise<void> => {
               try {
-                const { data: pricingObject } = await axiosClient.get<PricingGet>(
-                  `/${element.id}/pricing`,
-                  {
-                    timeout: REQUEST_TIMEOUT,
-                  }
-                );
-                if (!pricingObject) {
-                  return;
-                }
-                // eslint-disable-next-line no-param-reassign
-                element.pricingChildren = [pricingObject];
+                await fetchDeploymentPricing(axiosClient, element);
               } catch (e: unknown) {
                 const severity = classifyHttpError(e, `pricing for ${element.id}`);
                 if (severity === ErrorSeverity.FATAL) {
                   throw e;
                 }
-                // Skip or retry handled by classification
+                // log and skip after retries exhausted
+                config.logger.warn(`Skipping deployment pricing for ${element.id} after retries`);
               }
             })
           );
@@ -719,6 +740,7 @@ async function scrape(): Promise<void> {
     const tree = await fetchPricingForProduct(axiosClient, service);
     saasResults.push(tree);
     serviceProgress.increment();
+    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
   }
 
   const saasProducts = parseProducts(saasResults);
@@ -750,6 +772,7 @@ async function scrape(): Promise<void> {
     const tree = await fetchPricingForProduct(axiosClient, infra);
     iaasResults.push(tree);
     infraProgress.increment();
+    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
   }
 
   const iaasProducts = parseProducts(iaasResults);
@@ -781,6 +804,7 @@ async function scrape(): Promise<void> {
     const tree = await fetchPricingForProduct(axiosClient, ps);
     psResults.push(tree);
     psProgress.increment();
+    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
   }
 
   const psProducts = parseProducts(psResults, 'service');
@@ -811,6 +835,7 @@ async function scrape(): Promise<void> {
     const tree = await fetchPricingForProduct(axiosClient, service);
     compositeResults.push(tree);
     compositeProgress.increment();
+    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
   }
 
   const compositeProducts = parseProducts(compositeResults, 'service');

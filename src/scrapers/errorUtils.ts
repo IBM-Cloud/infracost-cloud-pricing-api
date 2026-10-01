@@ -44,6 +44,18 @@ export function classifyHttpError(error: unknown, context: string): ErrorSeverit
   return ErrorSeverity.SKIP;
 }
 
+export function retryAfterDelay(error: unknown): number | null {
+  if (!axios.isAxiosError(error)) return null;
+  if (error.response?.status !== 429) return null;
+  const header = error.response.headers?.['retry-after'];
+  if (!header) return null;
+  const seconds = Number(header);
+  if (!Number.isNaN(seconds) && seconds > 0) return seconds * 1000;
+  const date = Date.parse(header);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
 export async function retryOperation<T>(
   operation: () => Promise<T>,
   options: {
@@ -64,7 +76,9 @@ export async function retryOperation<T>(
         throw error;
       }
       
-      const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+      // Honour Retry-After for 429s; otherwise exponential backoff starting at 5s
+      const retryAfter = retryAfterDelay(error);
+      const delay = retryAfter ?? Math.min(5000 * Math.pow(2, attempt), 60000);
       options.onRetry?.(attempt + 1, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
     }

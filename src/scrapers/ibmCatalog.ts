@@ -3,14 +3,13 @@ import GlobalCatalogV1, {
 } from '@ibm-cloud/platform-services/global-catalog/v1';
 import { IamTokenManager } from '@ibm-cloud/platform-services/auth';
 import { writeFile } from 'fs/promises';
-import _ from 'lodash';
 import axios, { AxiosInstance } from 'axios';
 
 import type { Product, Price } from '../db/types';
 import { generateProductHash } from '../db/helpers';
 import addProducts from '../db/add';
 import config from '../config';
-import { classifyHttpError, ErrorSeverity, retryOperation, createProgressTracker } from './errorUtils';
+import { classifyHttpError, httpErrorSeverity, ErrorSeverity, retryOperation, createProgressTracker } from './errorUtils';
 
 const DEBUG = false;
 const saasProductFileName = `data/ibm-catalog-saas-products.json`;
@@ -589,7 +588,6 @@ async function getCatalogEntries(
   return servicesArray;
 }
 
-const DEPLOYMENT_CHUNK_SIZE = 4;
 const MAX_RETRIES = 3;
 const REQUEST_TIMEOUT = 180000; // 3 minutes for all products
 const INTER_PRODUCT_DELAY_MS = 200; // avoid burst-firing the Global Catalog API
@@ -611,10 +609,7 @@ async function fetchDeploymentPricing(
     },
     {
       maxRetries: MAX_RETRIES,
-      shouldRetry: (error) => {
-        const severity = classifyHttpError(error, `pricing for ${element.id}`);
-        return severity === ErrorSeverity.RETRY;
-      },
+      shouldRetry: (error) => httpErrorSeverity(error) === ErrorSeverity.RETRY,
       onRetry: (attempt, delay) => {
         config.logger.info(`Retrying pricing for ${element.id} (attempt ${attempt}/${MAX_RETRIES}, delay ${delay}ms)`);
       },
@@ -648,22 +643,16 @@ async function fetchPricingForProduct(
         const deploymentChildren = currentElem.children.filter(
           (child) => child.kind === 'deployment'
         );
-        const chunks = _.chunk(deploymentChildren, DEPLOYMENT_CHUNK_SIZE);
-        for (const elements of chunks) {
-          await Promise.all(
-            elements.map(async (element): Promise<void> => {
-              try {
-                await fetchDeploymentPricing(axiosClient, element);
-              } catch (e: unknown) {
-                const severity = classifyHttpError(e, `pricing for ${element.id}`);
-                if (severity === ErrorSeverity.FATAL) {
-                  throw e;
-                }
-                // log and skip after retries exhausted
-                config.logger.warn(`Skipping deployment pricing for ${element.id} after retries`);
-              }
-            })
-          );
+        for (const element of deploymentChildren) {
+          try {
+            await fetchDeploymentPricing(axiosClient, element);
+          } catch (e: unknown) {
+            const severity = classifyHttpError(e, `deployment pricing for ${element.id}`);
+            if (severity === ErrorSeverity.FATAL) {
+              throw e;
+            }
+          }
+          await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
         }
       }
       if (currentElem.children && currentElem.children.length > 0) {
@@ -715,13 +704,15 @@ async function scrape(): Promise<void> {
     apikey,
   });
 
-  // We won't need token refreshing
   const axiosClient = axios.create({
     baseURL,
     timeout: 60000, // 60 second timeout for catalog operations
-    headers: {
-      Authorization: `Bearer ${await tokenManager.getToken()}`,
-    },
+  });
+
+  // Refresh the IAM token before every request so long-running scrapes don't expire mid-run
+  axiosClient.interceptors.request.use(async (reqConfig) => {
+    reqConfig.headers['Authorization'] = `Bearer ${await tokenManager.getToken()}`;
+    return reqConfig;
   });
 
   config.logger.info('Fetching Service products...');

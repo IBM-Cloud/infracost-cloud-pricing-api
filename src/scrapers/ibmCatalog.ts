@@ -589,8 +589,29 @@ async function getCatalogEntries(
 }
 
 const MAX_RETRIES = 3;
-const REQUEST_TIMEOUT = 180000; // 3 minutes for all products
+const REQUEST_TIMEOUT = 30000; // 30 seconds per request
 const INTER_PRODUCT_DELAY_MS = 200; // avoid burst-firing the Global Catalog API
+const CONCURRENCY = 5; // max in-flight product fetches at once
+
+async function concurrentMap<T, R>(
+  items: T[],
+  concurrency: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let index = 0;
+
+  async function worker(): Promise<void> {
+    while (index < items.length) {
+      const i = index++;
+      results[i] = await fn(items[i]);
+      await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+  return results;
+}
 
 async function fetchDeploymentPricing(
   axiosClient: AxiosInstance,
@@ -715,24 +736,38 @@ async function scrape(): Promise<void> {
     return reqConfig;
   });
 
-  config.logger.info('Fetching Service products...');
+  config.logger.info('Fetching catalog entry lists...');
 
-  const serviceEntries = await getCatalogEntries(axiosClient, {
-    ...serviceParams,
-  });
+  const [serviceEntries, infrastructureEntries, platformServiceEntries, compositeServiceEntries] =
+    await Promise.all([
+      getCatalogEntries(axiosClient, { ...serviceParams }),
+      getCatalogEntries(axiosClient, { ...infrastuctureParams }),
+      getCatalogEntries(axiosClient, { ...platformServiceParams }),
+      getCatalogEntries(axiosClient, { ...compositeServiceParams }),
+    ]);
 
   const filteredServices = serviceEntries.filter(
     s => s.kind === 'service' && s.name && !skipList.includes(s.name)
   );
+  const filteredInfra = infrastructureEntries.filter(
+    i => i.kind === 'iaas' && i.name && !skipList.includes(i.name)
+  );
+  const filteredPS = platformServiceEntries.filter(
+    ps => ps.kind === 'platform_service' && ps.name && !skipList.includes(ps.name)
+  );
+  const filteredComposite = compositeServiceEntries.filter(
+    s => s.name && !compositeSkipList.includes(s.name)
+  );
 
+  config.logger.info('Fetching Service products...');
   const serviceProgress = createProgressTracker(filteredServices.length, 'Service scraping');
-  for (const service of filteredServices) {
+  const serviceResults = await concurrentMap(filteredServices, CONCURRENCY, async (service) => {
     config.logger.info(`Scraping pricing for ${service.name}`);
     const tree = await fetchPricingForProduct(axiosClient, service);
-    saasResults.push(tree);
     serviceProgress.increment();
-    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
-  }
+    return tree;
+  });
+  saasResults.push(...serviceResults);
 
   const saasProducts = parseProducts(saasResults);
   if (saasProducts.length === 0) {
@@ -740,31 +775,20 @@ async function scrape(): Promise<void> {
   } else {
     config.logger.info(`Scraped ${saasProducts.length} SaaS products`);
   }
-
   if (DEBUG) {
-
     dataString = JSON.stringify(saasProducts);
     await writeFile(saasProductFileName, dataString);
   }
 
   config.logger.info('Fetching Infrastructure products...');
-
-  const infrastructureEntries = await getCatalogEntries(axiosClient, {
-    ...infrastuctureParams,
-  });
-
-  const filteredInfra = infrastructureEntries.filter(
-    i => i.kind === 'iaas' && i.name && !skipList.includes(i.name)
-  );
-
   const infraProgress = createProgressTracker(filteredInfra.length, 'Infrastructure scraping');
-  for (const infra of filteredInfra) {
+  const infraResults = await concurrentMap(filteredInfra, CONCURRENCY, async (infra) => {
     config.logger.info(`Scraping pricing for ${infra.name}`);
     const tree = await fetchPricingForProduct(axiosClient, infra);
-    iaasResults.push(tree);
     infraProgress.increment();
-    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
-  }
+    return tree;
+  });
+  iaasResults.push(...infraResults);
 
   const iaasProducts = parseProducts(iaasResults);
   if (iaasProducts.length === 0) {
@@ -772,31 +796,20 @@ async function scrape(): Promise<void> {
   } else {
     config.logger.info(`Scraped ${iaasProducts.length} IaaS products`);
   }
-
   if (DEBUG) {
     dataString = JSON.stringify(iaasProducts);
     await writeFile(iaasProductFileName, dataString);
   }
 
-
   config.logger.info('Fetching Platform Service products...');
-
-  const platformServiceEntries = await getCatalogEntries(axiosClient, {
-    ...platformServiceParams,
-  });
-
-  const filteredPS = platformServiceEntries.filter(
-    ps => ps.kind === 'platform_service' && ps.name && !skipList.includes(ps.name)
-  );
-
   const psProgress = createProgressTracker(filteredPS.length, 'Platform Service scraping');
-  for (const ps of filteredPS) {
+  const psResultsTrees = await concurrentMap(filteredPS, CONCURRENCY, async (ps) => {
     config.logger.info(`Scraping pricing for ${ps.name}`);
     const tree = await fetchPricingForProduct(axiosClient, ps);
-    psResults.push(tree);
     psProgress.increment();
-    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
-  }
+    return tree;
+  });
+  psResults.push(...psResultsTrees);
 
   const psProducts = parseProducts(psResults, 'service');
   if (psProducts.length === 0) {
@@ -804,30 +817,20 @@ async function scrape(): Promise<void> {
   } else {
     config.logger.info(`Scraped ${psProducts.length} Platform Service products`);
   }
-
   if (DEBUG) {
     dataString = JSON.stringify(psProducts);
     await writeFile(platformProductFileName, dataString);
   }
 
   config.logger.info('Fetching Composite products...');
-
-  const compositeServiceEntries = await getCatalogEntries(axiosClient, {
-    ...compositeServiceParams,
-  });
-
-  const filteredComposite = compositeServiceEntries.filter(
-    s => s.name && !compositeSkipList.includes(s.name)
-  );
-
   const compositeProgress = createProgressTracker(filteredComposite.length, 'Composite scraping');
-  for (const service of filteredComposite) {
+  const compositeResultsTrees = await concurrentMap(filteredComposite, CONCURRENCY, async (service) => {
     config.logger.info(`Scraping pricing for ${service.name}`);
     const tree = await fetchPricingForProduct(axiosClient, service);
-    compositeResults.push(tree);
     compositeProgress.increment();
-    await new Promise(resolve => setTimeout(resolve, INTER_PRODUCT_DELAY_MS));
-  }
+    return tree;
+  });
+  compositeResults.push(...compositeResultsTrees);
 
   const compositeProducts = parseProducts(compositeResults, 'service');
   if (compositeProducts.length === 0) {
@@ -835,7 +838,6 @@ async function scrape(): Promise<void> {
   } else {
     config.logger.info(`Scraped ${compositeProducts.length} Composite products`);
   }
-
   if (DEBUG) {
     dataString = JSON.stringify(compositeProducts);
     await writeFile(compositeProductFileName, dataString);

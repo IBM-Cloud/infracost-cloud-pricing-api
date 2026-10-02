@@ -12,7 +12,10 @@ export function httpErrorSeverity(error: unknown): ErrorSeverity {
   const status = error.response?.status;
   if (status === 401 || status === 403) return ErrorSeverity.FATAL;
   if (status === 429 || (status && status >= 500)) return ErrorSeverity.RETRY;
-  if (['ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET', 'ENETUNREACH'].includes(error.code || '')) return ErrorSeverity.FATAL;
+  // Axios timeout or connection aborted — no response object, but still retryable
+  if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') return ErrorSeverity.RETRY;
+  // Unrecoverable network errors
+  if (['ECONNREFUSED', 'ECONNRESET', 'ENETUNREACH'].includes(error.code || '')) return ErrorSeverity.FATAL;
   return ErrorSeverity.SKIP;
 }
 
@@ -35,7 +38,11 @@ export function classifyHttpError(error: unknown, context: string): ErrorSeverit
       }
       break;
     case ErrorSeverity.RETRY:
-      config.logger.warn(`Retryable error ${status} in ${context}`);
+      if (status) {
+        config.logger.warn(`Retryable error ${status} in ${context}`);
+      } else {
+        config.logger.warn(`Retryable network error in ${context}: ${(error as any).code}`);
+      }
       break;
     case ErrorSeverity.SKIP:
       if (status === 404) {
@@ -82,8 +89,9 @@ export async function retryOperation<T>(
       }
       
       // Honour Retry-After for 429s; otherwise exponential backoff starting at 5s
+      const MAX_DELAY_MS = 60000;
       const retryAfter = retryAfterDelay(error);
-      const delay = retryAfter ?? Math.min(5000 * Math.pow(2, attempt), 60000);
+      const delay = Math.min(retryAfter ?? (5000 * Math.pow(2, attempt)), MAX_DELAY_MS);
       options.onRetry?.(attempt + 1, delay);
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -97,10 +105,8 @@ export function createProgressTracker(total: number, name: string) {
   return {
     increment() {
       completed++;
-      if (completed % 10 === 0 || completed === total) {
-        const percent = Math.round((completed / total) * 100);
-        config.logger.info(`${name} progress: ${completed}/${total} (${percent}%)`);
-      }
+      const percent = Math.round((completed / total) * 100);
+      config.logger.info(`${name} progress: ${completed}/${total} (${percent}%)`);
     },
     getCompleted() {
       return completed;

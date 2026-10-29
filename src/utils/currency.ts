@@ -235,7 +235,7 @@ async function queryRate(
     });
 
     return (<RateResp>resp.data).rates[to];
-  } catch (err) {
+  } catch (err: any) {
     config.logger.error('Error querying exchange rate:');
     config.logger.error(err);
     return undefined;

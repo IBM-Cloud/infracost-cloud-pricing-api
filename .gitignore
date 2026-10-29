@@ -2,7 +2,6 @@
 /data
 /creds
 .env*
-package-lock.json
 
 # Temp
 /tmp
@@ -16,3 +15,8 @@ package-lock.json
 # IDE
 .idea/
 .vscode/
+
+coverage
+__tests__
+
+.ignore*

@@ -1,0 +1,66 @@
+# Dockerfile built from https://github.ibm.com/dreadnought/dreadnought-common-images nodejs22 image
+
+# Building locally requires pointing to an `.npmrc` file to pull from Dreadnought's Artifactory instance, you can create one locally or point to your higher level file.
+
+# Before building locally make sure to log into ibmcloud cli and container registry by following:
+
+  # ibmcloud login --sso <select correct account number for dn-dev-d-appgalley>
+  # ibmcloud cr login
+
+# To build locally run `docker build . -t <tag> --secret id=npmrc,src=<.npmrc path>` from this repo's root
+
+# To run locally with browser access to it run `docker run --env-file <.env path> -itp 8081:8081 <image ID>`,
+# you can change `-it` to `-d` if you wish to run in detached mode instead of interactive.
+
+# The TAG ARG lets you pass in the latest version of the image
+ARG TAG
+
+# Template file for Docker
+# FROM !NODE_IMAGE_NAME!:latest as nodebuild
+# FROM !NODE_IMAGE_NAME!:$TAG as nodebuild
+FROM !NODE_IMAGE_NAME! as nodebuild
+
+# Set default Node environment variables
+ENV MODULE_NAME !MODULE_NAME!
+ENV MODULE_BUILD_VERSION !MODULE_BUILD_VERSION!
+
+# Set working directory
+WORKDIR /home/node/app
+
+# Ensure we're on an acceptable npm version
+RUN npm -v
+
+# Copy your files into the working directory
+COPY app.tar.gz /home/node/app
+
+# Unzip it
+RUN tar -xzf app.tar.gz -C /home/node/app/ \
+&& rm /home/node/app/app.tar.gz
+
+RUN npm install
+
+# Create data directories with proper permissions
+RUN mkdir -p /home/node/app/data/products && \
+    chown -R 1000:1000 /home/node/app/data
+
+# Copy over what we need to a new layer and provide the app entrypoint
+FROM scratch
+
+# Label the image as per dreadnought compliance
+LABEL compliance.owner="ibm-cloud-cost"
+LABEL com.ibm.control-group=PSIRT_PRD0012034
+
+USER 1000
+COPY --from=nodebuild --chown=1000 /image /
+COPY --from=nodebuild --chown=1000 /home/node/app /home/node/app
+
+# Expose default port defined in the microservices
+# ENV PORT=80
+EXPOSE 80
+
+# Launch both processes by default.
+WORKDIR /home/node/app
+
+# Perform npm start
+CMD ["node", "dist/server.js"]
+

@@ -16,3 +16,8 @@ package-lock.json
 # IDE
 .idea/
 .vscode/
+
+coverage
+__tests__
+
+.ignore*

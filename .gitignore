@@ -2,6 +2,7 @@
 /data
 /creds
 .env*
+package-lock.json
 
 # Temp
 /tmp

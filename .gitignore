@@ -18,6 +18,5 @@ package-lock.json
 .vscode/
 
 coverage
-__tests__
 
 .ignore*

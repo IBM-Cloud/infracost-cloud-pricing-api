@@ -19,7 +19,6 @@ describe('Server', () => {
     afterAll(() => app.server.close())
 
     it('Should listen to HTTP requests', async () => {
-        const userId = '0'
         await request(app)
             .post('/graphql')
             .send({

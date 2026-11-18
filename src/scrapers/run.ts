@@ -7,6 +7,7 @@ import gcpCatalog from './gcpCatalog';
 import gcpMachineTypes from './gcpMachineTypes';
 import ibmKubernetes from './ibmKubernetes';
 import ibmCatalog from './ibmCatalog';
+import ibmCos from './ibmCos';
 
 interface ScraperConfig {
   vendor: string;
@@ -29,13 +30,14 @@ const Scrapers = {
   ibm: {
     kubernetes: ibmKubernetes.scrape,
     catalog: ibmCatalog.scrape,
+    cos: ibmCos.scrape,
   }
 };
 
 async function run(): Promise<void> {
   const argv = await yargs
     .usage(
-      'Usage: $0 --only=[aws:bulk,aws:spot,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog]'
+      'Usage: $0 --only=[aws:bulk,aws:spot,azure:retail,gcp:catalog,gcp:machineTypes,ibm:kubernetes,ibm:catalog,ibm:cos]'
     )
     .options({
       only: { type: 'string' },
